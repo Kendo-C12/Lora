@@ -141,7 +141,7 @@ String clean(String s) {
 void transmitting(){
     lora_state = LoRaState::TRANSMITTING;
     lora_tx_end_time = millis() + 10 + (lora.getTimeOnAir(tx_data.length())) / 1000;
-    Serial.println(millis() - lora_tx_end_time);
+    // Serial.println(millis() - lora_tx_end_time);
     Serial.print("Transmitting: ");
     Serial.println(tx_data);
     state = lora.startTransmit(tx_data);
@@ -235,7 +235,7 @@ void rx()
 
   serialReadTask();
 
-  if(millis() > tx_time && tx_time_flag && rx_flag == true){   
+  if(millis() > tx_time && tx_time_flag && rx_flag){   
     tx_time_flag = false; 
     transmitting();
   }
