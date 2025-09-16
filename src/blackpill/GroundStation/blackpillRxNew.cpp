@@ -247,7 +247,7 @@ void rx()
     lora.startReceive();
   }
 
-  if (rx_flag && lora.getPacketLength() > 0)
+  if (rx_flag && lora.getPacketLength() > 0 && lora_state == LoRaState::RECEIVING)
   {
     rx_flag = false;
 
