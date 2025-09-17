@@ -13,7 +13,7 @@ SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  // Using hardware SPI (MISO,MOSI,
 SPISettings lora_spi_settings(8000000, MSBFIRST, SPI_MODE0); // 8 MHz for Mega2560
 
 constexpr struct {
-    float center_freq = 921.500000f;  // MHz
+    float center_freq = 920.400000f;  // MHz
     float bandwidth   = 125.f;     // kHz
     uint8_t spreading_factor = 9;  
     uint8_t coding_rate = 8;       
@@ -107,14 +107,14 @@ float lora_rssi;
 
 uint32_t serialInTime;
 
+uint32_t t = 0;
+uint32_t c = 0;
+
 uint32_t reciveTime;
 int count = 0;
 String oldString = "";
 
-void serialReadTask();
 void rx();
-String calLostTrack(String in);
-
 
 void setup()
 {
@@ -135,15 +135,6 @@ void setup()
   loraSetup();
 
   Serial.print("success");
-
-  // float freq;
-  // EEPROM.get<float>(0, freq);
-  // if(freq > 800){
-  //   lora.setFrequency(freq);
-  //   Serial.print("Set frequency to ");
-  //   Serial.print(freq);
-  //   Serial.println("MHz");
-  // }
 
   reciveTime = millis();
 
@@ -187,87 +178,82 @@ void serialReadTask() {
 
 void rx()
 {
-    serialReadTask();
+  serialReadTask();
 
-    if (millis() > lora_tx_end_time &&
-        lora_state != LoRaState::RECEIVING)
-    {
-        tx_flag = true;
-        lora_state = LoRaState::RECEIVING;
-        lora.startReceive();
-        Serial.println("[RECEIVING...]");
-    }
-
-    // Set Rx Done
-    if (lora.getPacketLength() > 0
-    &&    (lora.getRSSI() != lora_rssi  || millis() - reciveTime > 2200  ))
-    {
-        reciveTime = millis();
-        rx_flag = true;
-        if(lora.getRSSI() == lora_rssi){
-          count++;
-        }
-        
-        if (transmit)
-        {
-            Serial.print("[TRANSMITTED] ");
-            Serial.println(tx_data);
-            tx_flag = false;
-            lora_state = LoRaState::TRANSMITTING;
-            lora.startTransmit(tx_data);
-
-            lora_tx_end_time = millis() + 10 + (lora.getTimeOnAir(tx_data.length())) / 1000;
-            Serial.println("[TRANSMITTING...]");
-            transmit = false;
-        }
-
-        lora.startReceive();
-        
-    }
-
-    // On Receive
-    if (rx_flag)
-    {
-        String s;
-        lora.readData(s);
-        // if(oldString != s){
-          Serial.print(s[s.length() - 1]);
-          while (s.length() > 0 && (s[s.length() - 1] == '\n' || s[s.length() - 1] == '\r')) {
-            s = s.substring(0, s.length() - 1);
-          }
-          
-          lora_rssi = lora.getRSSI();
-          s += ',';
-          s += lora_rssi;
-          s += ',';
-          s += lora.getSNR();
-          s += ',';
-          s += lora.getPacketLength();
-          Serial.println(count);
-          // s += ',';
-          // s += count;
-          // s += ',';
-          // s += calLostTrack(s);
-          Serial.print("RSSI: ");
-          Serial.println(lora_rssi);
-          Serial.println("[RECEIVED]    ");
-          Serial.println(s);
-          // Serial.println(oldString);
-          rx_flag = false;
-
-          lora_state = LoRaState::RECEIVING;
-          lora.startReceive();
-          Serial.println("[RECEIVING...]");
-          
-          oldString = s;
-        // }
-            // On Transmit
-    }
-
-    // if(millis() - printV > 100){
-    //   Serial.print(lora.getRSSI());
-    //   Serial.print(lora.getPacketLength());
-    //   Serial.println(rx_flag);
-    //   printV = millis();
-    // }
+  if (millis() > lora_tx_end_time &&
+      lora_state != LoRaState::RECEIVING)
+  {
+      tx_flag = true;
+      lora_state = LoRaState::RECEIVING;
+      lora.startReceive();
+      Serial.println("[RECEIVING...]");
   }
+
+  // Set Rx Done
+  if (lora.getPacketLength() > 0
+  &&    (lora.getRSSI() != lora_rssi))
+  {
+    reciveTime = millis();
+    rx_flag = true;
+    if(lora.getRSSI() == lora_rssi){
+      count++;
+    }
+    
+    if (transmit)
+    {
+      Serial.print("[TRANSMITTED] ");
+      Serial.println(tx_data);
+      tx_flag = false;
+      lora_state = LoRaState::TRANSMITTING;
+      lora.startTransmit(tx_data);
+
+      lora_tx_end_time = millis() + 10 + (lora.getTimeOnAir(tx_data.length())) / 1000;
+      Serial.println("[TRANSMITTING...]");
+      transmit = false;
+    }
+    lora.startReceive(); 
+  }
+
+  // On Receive
+  if (rx_flag)
+  {
+    String s;
+    lora.readData(s);
+
+    // Serial.println(s);
+
+    s.trim();          // remove whitespace/newlines
+    int value = s.toInt();
+    // Serial.println(value);
+    if (value - c != 1 && value - c > 0) {
+        t++;
+    }
+    c = value;
+  
+    // Serial.print(s[s.length() - 1]);
+    while (s.length() > 0 && (s[s.length() - 1] == '\n' || s[s.length() - 1] == '\r')) {
+      s = s.substring(0, s.length() - 1);
+    }
+    lora_rssi = lora.getRSSI();
+    // s += ',';
+    // s += lora_rssi;
+    // s += ',';
+    // s += lora.getSNR();
+    // s += ',';
+    // s += lora.getPacketLength();
+    // Serial.println(count);
+
+    Serial.print("RSSI: ");
+    Serial.println(lora_rssi);
+    Serial.println("[RECEIVED]    ");
+    Serial.println(s);
+
+    rx_flag = false;
+
+    lora_state = LoRaState::RECEIVING;
+    lora.startReceive();
+    Serial.println("[RECEIVING...]");
+    
+    Serial.println(t);
+  }
+}
