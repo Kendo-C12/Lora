@@ -237,12 +237,11 @@ void simulatetransmitting(){
   if(sim){
     if(millis() > simulate && !rxLoopTime.tx_flag_get()){
       countLostInt(lastCount);
-      simulate = millis() + r;
       r += 10;
       tx_data = String(r);
       rxLoopTime.transmit();
       if(r > 2000)
-        while (1);
+        while (1){ delay(100);}
       sim = false;
     }
   }
@@ -375,9 +374,10 @@ void serialReadTask() {
 
 void rx()
 {
-  if(simT > millis() + 2000){
+  if(millis() - simT > 2000){
     if(!sim){
       sim = true;
+      simulate = millis() + r;
     }
     simT = millis();
   }
