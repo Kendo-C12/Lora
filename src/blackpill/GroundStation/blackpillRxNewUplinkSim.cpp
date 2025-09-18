@@ -232,18 +232,17 @@ void countLostInt(int value ){
 }
 
 void simulatetransmitting(){
-  if(millis() - loopSimulate > 0 && sim){
-    if(millis() > simulate && !rxLoopTime.tx_flag_get()){
+  if(sim){
+    if(milli > simulate && !rxLoopTime.tx_flag_get()){
       countLostInt(lastCount);
-      simulate = millis() + r + 2000;
+      simulate = millis() + r;
       r += 10;
       tx_data = String(r);
       rxLoopTime.transmit();
       if(r > 2000)
         while (1);
-      sim = false
+      sim = false;
     }
-    loopSimulate = millis();
   }
 };
 
