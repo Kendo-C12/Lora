@@ -134,14 +134,12 @@ struct LoopTime{
 	bool transmitOrNot(){
     // Serial.println(tx_flag);  
     if(tx_flag){
-      // print();
+      print();
       
-      if((millis() - start > 400
-      // if((millis() - start > loraTxTimeOnAir.sum() 
+      if((millis() - start > loraTxTimeOnAir.sum() 
         && duration.sum() - (millis() - start) > 100 ) 
           || duration.len == 0 
-          || millis() - start > 2000)
-          // || millis() - start > duration.sum())
+          || millis() - start > duration.sum())
       {
         Serial.print("Wait Time: ");
         Serial.println(millis() - startTx);
@@ -228,21 +226,6 @@ void countLostInt(int value ){
     Serial.print(',');
   }
 }
-
-void simulatetransmitting(){
-  if(millis() - loopSimulate > 2000){
-    if(millis() > simulate && !rxLoopTime.tx_flag_get()){
-      countLostInt(lastCount);
-      simulate = millis() + r + 2000;
-      r += 10;
-      tx_data = String(r);
-      rxLoopTime.transmit();
-      if(r > 2000)
-        while (1);
-    }
-    loopSimulate = millis();
-  }
-};
 
 void countLost(String s){
   s.trim();          // remove whitespace/newlines
@@ -365,8 +348,6 @@ void serialReadTask() {
 
 void rx()
 {
-  simulatetransmitting();
-
   serialReadTask();
 
   if(rxLoopTime.transmitOrNot()){ 
