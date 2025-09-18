@@ -82,8 +82,8 @@ void loraSetup(){
 struct LoopTime{
 
 	uint32_t start;
-	uint32_t printT = millis();
-  uint32_t startTx = millis();
+	uint32_t printT;
+    uint32_t startTx;
 	bool tx_flag;
 	
 	
@@ -124,6 +124,8 @@ struct LoopTime{
 
 	void begin(){
 		start = millis();
+        printT = millis();
+        startTx = millis();
 		tx_flag = false;
 	}
 
@@ -211,8 +213,8 @@ int t = 0;
 int r = 1500;
 bool sim = false;
 uint32_t simT;
-uint32_t simulate = millis();
-uint32_t loopSimulate = millis();
+uint32_t simulate
+uint32_t loopSimulate;
 void serialReadTask();
 void rx();
 
@@ -233,7 +235,7 @@ void countLostInt(int value ){
 
 void simulatetransmitting(){
   if(sim){
-    if(milli > simulate && !rxLoopTime.tx_flag_get()){
+    if(millis() > simulate && !rxLoopTime.tx_flag_get()){
       countLostInt(lastCount);
       simulate = millis() + r;
       r += 10;
@@ -329,6 +331,8 @@ void setup()
   rxLoopTime.begin();
 
   simT = millis();
+  simulate = millis();
+  loopSimulate = millis();
 }
 
 void loop(){
