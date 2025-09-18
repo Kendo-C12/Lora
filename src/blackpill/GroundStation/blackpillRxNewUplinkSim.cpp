@@ -209,6 +209,8 @@ int i = 0;
 int c = 0;
 int t = 0;
 int r = 1500;
+bool sim = false;
+uint32_t simT;
 uint32_t simulate = millis();
 uint32_t loopSimulate = millis();
 void serialReadTask();
@@ -230,7 +232,7 @@ void countLostInt(int value ){
 }
 
 void simulatetransmitting(){
-  if(millis() - loopSimulate > 2000){
+  if(millis() - loopSimulate > 0 && sim){
     if(millis() > simulate && !rxLoopTime.tx_flag_get()){
       countLostInt(lastCount);
       simulate = millis() + r + 2000;
@@ -239,6 +241,7 @@ void simulatetransmitting(){
       rxLoopTime.transmit();
       if(r > 2000)
         while (1);
+      sim = false
     }
     loopSimulate = millis();
   }
@@ -325,6 +328,8 @@ void setup()
 
   lora.startReceive();
   rxLoopTime.begin();
+
+  simT = millis();
 }
 
 void loop(){
@@ -332,6 +337,8 @@ void loop(){
 }
 
 void serialReadTask() {
+
+
   if (Serial.available() && millis() > lora_tx_end_time)
   {
     tx_data = "";
@@ -365,6 +372,13 @@ void serialReadTask() {
 
 void rx()
 {
+  if(simT > millis() + 2000){
+    if(!sim){
+      sim = true;
+    }
+    simT = millis();
+  }
+
   simulatetransmitting();
 
   serialReadTask();
