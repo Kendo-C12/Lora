@@ -13,7 +13,7 @@ SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  // Using hardware SPI (MISO,MOSI,
 SPISettings lora_spi_settings(8000000, MSBFIRST, SPI_MODE0); // 8 MHz for Mega2560
 
 constexpr struct {
-    float center_freq = 915.000000f;  // MHz
+    float center_freq = 920.400000f;  // MHz
     float bandwidth   = 125.f;     // kHz
     uint8_t spreading_factor = 9;  
     uint8_t coding_rate = 8;       
@@ -195,7 +195,6 @@ struct LoopTime{
 
 }rxLoopTime;
 
-
 /* ================================================================================================== */
 // LoRa State
 enum class LoRaState
@@ -216,7 +215,6 @@ volatile bool tx_flag = false;
 volatile bool transmit = false;
 volatile LoRaState lora_state = LoRaState::IDLE;
 
-uint32_t lora_tx_end_time;
 uint32_t printV;
 uint32_t serialEndTime;
 uint32_t tx_time;
@@ -238,7 +236,7 @@ String slossing[500];
 int i = 0;
 int c = 0;
 int t = 0;
-int r = 1500;
+int r = 0;
 bool sim = false;
 uint8_t re = 0;
 uint32_t simT;
@@ -246,7 +244,6 @@ uint32_t simulate;
 uint32_t loopSimulate;
 void serialReadTask();
 void rx();
-
 
 
 void countLostInt(int value ){
@@ -287,6 +284,7 @@ void countLostInt(int value ){
   }
 
   Serial.println("SUCCES : " + String(s) + "\tFAIL : " + String(f));
+
 }
 
 void simulatetransmitting(){
@@ -310,9 +308,8 @@ String clean(String s) {
 }
 
 void transmitting(){
+    tx_flag = false;
     lora_state = LoRaState::TRANSMITTING;
-    lora_tx_end_time = millis() + 10 + (lora.getTimeOnAir(tx_data.length())) / 1000;
-    // Serial.println(millis() - lora_tx_end_time);
     Serial.print("Transmitting: ");
     Serial.println(tx_data);
     state = lora.startTransmit(tx_data);
@@ -325,8 +322,12 @@ void transmitting(){
     }
 }
 
-void setFlag(void) {
+void setRxFlag(void) {
   rx_flag = true;
+}
+
+void setTxFlag(void){
+  tx_flag = true;
 }
 
 void setup()
@@ -358,10 +359,10 @@ void setup()
     Serial.println("MHz");
   } 
 
-  lora_tx_end_time = millis();
   tx_time = millis();
 
-  lora.setPacketReceivedAction(setFlag);
+  lora.setPacketReceivedAction(setRxFlag);
+  lora.setPacketSentAction(setTxFlag);
 
   lora.startReceive();
   rxLoopTime.begin();
@@ -376,7 +377,9 @@ void loop(){
 }
 
 void serialReadTask() {
-  if (Serial.available() && millis() > lora_tx_end_time)
+
+
+  if (Serial.available() && !tx_flag)
   {
     tx_data = "";
     
@@ -411,7 +414,7 @@ void rx()
 {
   if(re >= 1){
     re = 0;
-    if(!sim && millis() > lora_tx_end_time){
+    if(!sim && tx_flag){
       countLostInt(lastCount);
       sim = true;
       simulate = millis() + r;
@@ -427,7 +430,6 @@ void rx()
 
   if(rxLoopTime.transmitOrNot()){ 
     transmitting();
-
     sim = false;
 
     Serial.print("delay time: ");
@@ -436,7 +438,7 @@ void rx()
     Serial.println(millis());
   }
 
-  if (millis() > lora_tx_end_time &&
+  if (tx_flag &&
       lora_state != LoRaState::RECEIVING)
   {
       lora.sleep(1);
@@ -456,7 +458,7 @@ void rx()
     state = lora.readData(s);
 
     if(state == RADIOLIB_ERR_NONE) {
-      
+
       rxLoopTime.receive(lora.getTimeOnAir(s.length()));
       
       lastCount = s.toInt();
