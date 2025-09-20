@@ -376,6 +376,8 @@ void loop(){
 }
 
 void serialReadTask() {
+
+
   if (Serial.available() && millis() > lora_tx_end_time)
   {
     tx_data = "";
