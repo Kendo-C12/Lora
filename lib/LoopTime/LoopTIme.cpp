@@ -41,14 +41,15 @@ bool LoopTime::tx_flag_get() {
 
 bool LoopTime::transmitOrNot() {
     if(tx_flag) {
-        if(millis() - start >= loraTxTimeOnAir.sum() - 10) {
+        print();
+        if(millis() - start >= duration.sum() - 10) {
             start = millis();
         }
 
         if( ((millis() - start > loraTxTimeOnAir.sum() + 100) &&
              (duration.sum() - (millis() - start) > 100)) 
              || duration.len == 0 
-             || millis() - start > duration.sum() * 2) 
+             || millis() - startReal > duration.sum() * 2) 
         {
             Serial.print("Wait Time: ");
             Serial.println(millis() - startTx);
@@ -69,12 +70,11 @@ void LoopTime::receive(uint32_t timeOnAir) {
     if(!startOrNot) {
         startOrNot = true;
         start = millis();
+        startReal = millis();
         return;
     }
     duration.push(millis() - start);
     loraTxTimeOnAir.push(10 + timeOnAir / 1000);
     start = millis();
+    startReal = millis();
 }
-
-// -------- Global instance --------
-LoopTime rxLoopTime;

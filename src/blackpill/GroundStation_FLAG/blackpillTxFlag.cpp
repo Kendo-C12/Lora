@@ -93,8 +93,6 @@ int transmissionState = RADIOLIB_ERR_NONE;
 
 bool transmitFlag = false;
 
-volatile bool operationDone = false;
-
 int state;
 uint8_t t;
 uint8_t last_ack;
@@ -105,17 +103,14 @@ volatile LoRaState lora_state = LoRaState::IDLE;
 String line;
 String stateR = "STARTUP";
 float lora_rssi;
+volatile bool operationDone = false;
 volatile bool rx_flag = false;
 volatile bool tx_flag = false;
 unsigned long last_time;
 unsigned long last_time_line;
 
-void setRxFlag(void) {
-  rx_flag = true;
-}
-
-void setTxFlag(void){
-  tx_flag = true;
+void setFlag(void) {
+  operationDone = true;
 }
 
 void setup() {
@@ -131,8 +126,7 @@ void setup() {
 
   loraSetup();
 
-  lora.setPacketSentAction(setTxFlag);
-  lora.setPacketReceivedAction(setRxFlag);
+  lora.setDio1Action(setFlag);
 
   t = 0;
   randomSeed(analogRead(A0));
@@ -179,8 +173,8 @@ void loop() {
     last_time_line = millis();
   }
 
-  if(millis() - last_time > 2000 && rx_flag){
-    tx_flag = false;
+  if(millis() - last_time > 2000){
+    tx_flag = true;
     lora_state = LoRaState::TRANSMITTING;
     lora.startTransmit(line);
     Serial.println("[TRANSMITTING...]"); 
@@ -189,46 +183,49 @@ void loop() {
     last_time = millis();
   }
 
-  // Set Tx Done
-  if (tx_flag &&
-      lora_state != LoRaState::RECEIVING)
-  {
-      lora.finishTransmit();
+  if(operationDone){
+    operationDone = false;
+
+    if(tx_flag){
+      // Set Tx Done
+      tx_flag = false;
       lora_state = LoRaState::RECEIVING;
       lora.startReceive();
       Serial.println("[RECEIVING...]");
-  }
+    }
+    else{
+      // On Receive
+      if (lora.getPacketLength() > 0)
+      {
+          String rx_string;
+          lora.readData(rx_string);
+          lora_rssi = lora.getRSSI();
+          Serial.print("[RECEIVED] :");
+          Serial.println(rx_string);
+          rx_flag = false;
 
-  // On Receive
-  if (rx_flag && lora.getPacketLength() > 0)
-  {
-      String rx_string;
-      lora.readData(rx_string);
-      lora_rssi = lora.getRSSI();
-      Serial.print("[RECEIVED] :");
-      Serial.println(rx_string);
-      rx_flag = false;
+          if(rx_string.substring(0,4) == "cmd "){
+            last_ack++;
+            rx_string = rx_string.substring(4);
+            if(stateR == "STARTUP" && rx_string == "on"){
+                stateR = "IDLESAFE";
+            }
+            else if (stateR == "IDLESAFE" && rx_string == "arm")
+            {
+                stateR = "ARM";
+            }
+            else if (stateR == "ARM" && rx_string == "reset"){
+                stateR = "STARTUP";
+            }
+          }
+          else{
+            last_nack++;
+          }
 
-      if(rx_string.substring(0,4) == "cmd "){
-        last_ack++;
-        rx_string = rx_string.substring(4);
-        if(stateR == "STARTUP" && rx_string == "on"){
-            stateR = "IDLESAFE";
-        }
-        else if (stateR == "IDLESAFE" && rx_string == "arm")
-        {
-            stateR = "ARM";
-        }
-        else if (stateR == "ARM" && rx_string == "reset"){
-            stateR = "STARTUP";
-        }
+          lora_state = LoRaState::RECEIVING;
+          lora.startReceive();
+          Serial.println("[RECEIVING...]");
       }
-      else{
-        last_nack++;
-      }
-
-      lora_state = LoRaState::RECEIVING;
-      lora.startReceive();
-      Serial.println("[RECEIVING...]");
+    }
   }
 }

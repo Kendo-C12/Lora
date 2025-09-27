@@ -17,7 +17,7 @@ constexpr struct {
     uint8_t spreading_factor = 9;  
     uint8_t coding_rate = 8;       
     uint8_t sync_word = 0x12;      
-    int8_t power = 22;             
+    int8_t power = -9;             
     uint16_t preamble_length = 16;
 } lora_params;
 
@@ -100,6 +100,7 @@ uint8_t t;
 uint8_t last_ack;
 uint8_t last_nack;
 uint32_t lora_tx_end_time;
+uint32_t printV;
 volatile LoRaState lora_state = LoRaState::IDLE;
 String line;
 String stateR = "STARTUP";
@@ -110,7 +111,12 @@ unsigned long last_time;
 unsigned long last_time_line;
 
 void setFlag(void) {
-  rx_flag = true;
+  if(lora_state == LoRaState::TRANSMITTING){
+    tx_flag = true;
+  }
+  else{
+    rx_flag = true;
+  }
 }
 
 void setup() {
@@ -126,26 +132,35 @@ void setup() {
 
   loraSetup();
 
-  lora.setPacketReceivedAction(setFlag);
-  
-  //lora.setDio1Action(setFlag);
+  lora.setDio1Action(setFlag);
 
   t = 0;
   randomSeed(analogRead(A0));
 
   last_time = millis();
   last_time_line = millis();
+
+  tx_flag = true;
+  rx_flag = false;
+  printV = millis()-1;
 }
 
 void loop() {
+  if(millis() > printV){
+    Serial.println(String(tx_flag) + " " + String(rx_flag));
+    printV = millis() + 500;
+  }
+
   if(millis() - last_time_line > 2000){
     line = "";
 
     line += "<3>";
     line += ",";
-    line += String(t);
+    line += "920.4";  // freq
     line += ",";
-    line += stateR;
+    line += String(t);  // count
+    line += ",";
+    line += stateR; // ps
     line += ",";
     line += String(random(50, 150)); // lat
     line += ",";
@@ -164,12 +179,10 @@ void loop() {
     last_time_line = millis();
   }
 
-
-  if(millis() - last_time > 2000){
-
+  if(millis() - last_time > 2000 && rx_flag){
+    tx_flag = false;
     lora_state = LoRaState::TRANSMITTING;
     lora.startTransmit(line);
-    lora_tx_end_time = millis() + 10 + (lora.getTimeOnAir(line.length())) / 1000;
     Serial.println("[TRANSMITTING...]"); 
     ++t;
 
@@ -177,21 +190,13 @@ void loop() {
   }
 
   // Set Tx Done
-  if (millis() > lora_tx_end_time &&
+  if (tx_flag &&
       lora_state != LoRaState::RECEIVING)
   {
-      tx_flag = true;
+      lora.finishTransmit();
       lora_state = LoRaState::RECEIVING;
       lora.startReceive();
       Serial.println("[RECEIVING...]");
-  }
-
-  // Set Rx Done
-  if (lora.getPacketLength() > 0 &&
-      lora.getRSSI() != lora_rssi)
-  {
-      Serial.println(lora_rssi);
-      rx_flag = true;
   }
 
   // On Receive

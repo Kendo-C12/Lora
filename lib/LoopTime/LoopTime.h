@@ -9,6 +9,7 @@ struct LoopTime {
     uint32_t start;
     uint32_t printT = millis();
     uint32_t startTx = millis();
+    uint32_t startReal = millis();
     bool tx_flag;
 
     struct arrays {

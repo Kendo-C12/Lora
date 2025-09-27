@@ -3,3 +3,7 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+.src/blackpill/GroundStation
+.src/blackpill/GroundStation_FLAG_BACKUP
+.src/blackpill/NOTE
+.src/blackpill/blackpillGroundStation.cpp
