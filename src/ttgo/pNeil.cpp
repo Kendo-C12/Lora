@@ -12,13 +12,14 @@
 #define DIO0 26
 #define DIO1 13
 
-constexpr struct {
-    float center_freq = 920.400000f;  // MHz
-    float bandwidth   = 125.f;     // kHz
-    uint8_t spreading_factor = 9;  
-    uint8_t coding_rate = 8;       
-    uint8_t sync_word = 0x12;      
-    int8_t power = 22;             
+constexpr struct
+{
+    float center_freq = 921.500000f; // MHz
+    float bandwidth = 125.f;         // kHz
+    uint8_t spreading_factor = 9;    // SF: 6 to 12
+    uint8_t coding_rate = 8;         // CR: 5 to 8
+    uint8_t sync_word = 0x12;        // Private SX1262
+    int8_t power = 20;               // up to 22 dBm for SX1262
     uint16_t preamble_length = 16;
 } lora_params;
 
@@ -145,12 +146,12 @@ struct LoopTime{
         start = millis();
         lora_tx_end_time = millis() + 50 + (lora.getTimeOnAir(len)) / 1000;
       }
-      // if((millis() - start > 50
-      if((millis() - start > loraTxTimeOnAir.sum() 
+      if((millis() - start > 50
+      // if((millis() - start > loraTxTimeOnAir.sum() 
         && duration.sum() - (millis() - start) > loraTxTimeOnAir.sum() ) 
           || duration.len == 0 
-          // || millis() - start > 2000*2) // duration.sum()
-          || millis() - startReal > duration.sum()*2) // duration.sum()
+          || millis() - start > 2000*2) // duration.sum()
+          // || millis() - startReal > duration.sum()*2) // duration.sum()
       {
         Serial.print("\t\tWait Time: ");
         Serial.println(millis() - startTx);
@@ -236,7 +237,7 @@ bool tx_time_flag = false;
 float lora_rssi;
 
 uint32_t serialInTime;
-uint32_t state;
+int state;
 uint32_t reciveTime;
 bool flagAgain = false;
 int count = 0;
@@ -278,7 +279,7 @@ void transmitting(){
       Serial.println("[TRANSMITTING...]");
     }
     else {
-      Serial.print("Transmit failed, code: ");
+      Serial.print("TransmitFailed,Code: ");
       Serial.println(state);
     }
 }
@@ -294,7 +295,7 @@ void setup()
   Serial.begin(115200);
 
   Serial.println("Connected");
-  
+
   SPI.begin(); // initialize SPI bus
 
   Serial.println("SPI begin");
@@ -311,17 +312,19 @@ void setup()
   EEPROM.get<float>(0, freq);
   if(freq > 800){
     lora.setFrequency(freq);
-    Serial.print("Set frequency to ");
+    Serial.print("SetFrequencyTo ");
     Serial.print(freq);
     Serial.println("MHz");
   } 
 
   tx_time = millis();
 
-  lora.setDio1Action(setFlag,RISING);  
+  lora.setDio0Action(setFlag,RISING);  
 
   lora.startReceive();
   rxLoopTime.begin();
+
+  tx_flag = false;
 }
 
 void loop(){
@@ -341,14 +344,14 @@ void serialReadTask() {
             serialEndTime = millis();
         }
     }
-    if (tx_data.substring(0, 9) == "cmd freq ")
+    if (tx_data.substring(0, 4) == "freq")
     {
-      String freqStr = tx_data.substring(9);
+      String freqStr = tx_data.substring(4);
       freqStr.trim();
       const float freq = freqStr.toFloat();
       lora.setFrequency(freq);
       EEPROM.put<float>(0, freq);
-      Serial.print("Set frequency to ");
+      Serial.print("SetFrequencyTo ");
       Serial.print(freq);
       Serial.println("MHz");
     }
@@ -356,7 +359,7 @@ void serialReadTask() {
     {
       rxLoopTime.transmit(tx_data);
     }
-    Serial.print("Get Serial");
+    // Serial.print("Get Serial");
   }
 }
 
@@ -383,6 +386,8 @@ void rx()
       String s;
       state = lora.readData(s);
 
+      // lora.standby();
+      delay(1);
       if(state == RADIOLIB_ERR_NONE) {
         rxLoopTime.receive(lora.getTimeOnAir(s.length()));
         
@@ -398,17 +403,13 @@ void rx()
         s += ',';
         s += lora.getPacketLength();
 
-        Serial.print("RSSI: ");
-        Serial.println(lora_rssi);
-
-        Serial.println("[RECEIVED]   ");
+        // Serial.print("RSSI: ");
+        // Serial.println(lora_rssi);
         
-        Serial.println(s);
-
-        Serial.println("[RECEIVING...]");
+        Serial.println("[RECEIVED],"+s);
       }
       else {
-        Serial.print("Receive failed, code: ");
+        Serial.print("ReceiveFailed,Code: ");
         Serial.println(state);
       }
     

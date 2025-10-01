@@ -32,7 +32,7 @@ void loraSetup(){
   
   Serial.println("Initializing SX1262...");
 
-  int16_t lora_state = lora.begin(
+  int lora_state = lora.begin(
     lora_params.center_freq,
     lora_params.bandwidth,
     lora_params.spreading_factor,
@@ -171,9 +171,7 @@ void loop() {
     line += String(last_nack);
 
     last_time_line = millis();
-  }
 
-  if(millis() - last_time > 2000){
     tx_flag = true;
     lora_state = LoRaState::TRANSMITTING;
     lora.startTransmit(line);
@@ -182,6 +180,10 @@ void loop() {
 
     last_time = millis();
   }
+
+  // if(millis() - last_time > 2000){
+
+  // }
 
   if(operationDone){
     operationDone = false;

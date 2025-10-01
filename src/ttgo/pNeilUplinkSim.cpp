@@ -1,34 +1,29 @@
-#include <Arduino.h>
-
-#include <RadioLib.h>
 #include <SPI.h>
+#include <RadioLib.h>
 #include <EEPROM.h>
 
 
-#define LORA_MOSI PA7
-#define LORA_MISO PA6
-#define LORA_SCLK PA5
-
-SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  // Using hardware SPI (MISO,MOSI,SCLK)
-
-SPISettings lora_spi_settings(8000000, MSBFIRST, SPI_MODE0); // 8 MHz for Mega2560
+// SX1276 pin connections for TTGO LoRa32 V1
+#define SCK 5
+#define MISO 19
+#define MOSI 27
+#define SS 18
+#define RST 14
+#define DIO0 26
+#define DIO1 13
 
 constexpr struct {
-    float center_freq = 920.400000f;  // MHz
+    float center_freq = 925.000000f;  // MHz
     float bandwidth   = 125.f;     // kHz
     uint8_t spreading_factor = 9;  
     uint8_t coding_rate = 8;       
     uint8_t sync_word = 0x12;      
-    int8_t power = 22;             
+    int8_t power = 20;             
     uint16_t preamble_length = 16;
 } lora_params;
 
-#define LORA_NSS   PA4
-#define LORA_DIO1  PB8
-#define LORA_NRST  PB7
-#define LORA_BUSY  PB6
-
-SX1262 lora = new Module(LORA_NSS, LORA_DIO1, LORA_NRST, LORA_BUSY, spi1, lora_spi_settings);
+// Initialize SX1276 module
+SX1276 lora = new Module(SS, DIO0, RST, DIO0);
 
 void loraSetup(){
   
@@ -80,17 +75,13 @@ void loraSetup(){
   }
 }
 
-
 struct LoopTime{
 
   bool startOrNot = false;
 	uint32_t start;
 	uint32_t printT;
-  uint32_t startTx;
-  uint32_t startReal;
+    uint32_t startTx;
 	bool tx_flag;
-  uint32_t lora_tx_end_time;
-  uint32_t len;
 	
   String fstage;
 	
@@ -132,7 +123,6 @@ struct LoopTime{
 
 	void begin(){
 		start = millis();
-    startReal = millis();
     printT = millis();
     startTx = millis();
 		tx_flag = false;
@@ -147,14 +137,12 @@ struct LoopTime{
       print();
       if(millis() - start >= 1999){
         start = millis();
-        lora_tx_end_time = millis() + 50 + (lora.getTimeOnAir(len)) / 1000;
       }
-      // if((millis() - start > 50
-      if((millis() - start > loraTxTimeOnAir.sum() 
-        && duration.sum() - (millis() - start) > loraTxTimeOnAir.sum() ) 
+      if((millis() - start > 50
+      // if((millis() - start > loraTxTimeOnAir.sum() 
+        && 2000 - (millis() - start) > 500) 
           || duration.len == 0 
-          // || millis() - start > 2000*2) // duration.sum()
-          || millis() - startReal > duration.sum()*2) // duration.sum()
+          || millis() - start > 2000*2) // duration.sum()
       {
         Serial.print("\t\tWait Time: ");
         Serial.println(millis() - startTx);
@@ -182,13 +170,10 @@ struct LoopTime{
 		return false;
 	}
 
-	void transmit(String in){
+	void transmit(){
     startTx = millis();
-    startReal = millis();
-		tx_flag = true;
-    fstage = "";
-    len = in.length();
-    lora_tx_end_time = millis() + 50 + (lora.getTimeOnAir(len)) / 1000;
+	    	tx_flag = true;
+        fstage = "";
 	}
 
 	void receive(uint32_t timeOnAir){
@@ -196,17 +181,15 @@ struct LoopTime{
     if(!startOrNot) {
         startOrNot = true;
         start = millis();
-        startReal = millis();
         return;
     }
-		duration.push(millis() - start);
-		loraTxTimeOnAir.push(10 + timeOnAir/1000);
+    duration.push(millis() - start);
+    loraTxTimeOnAir.push(10 + timeOnAir/1000);
 
-		start = millis();
+    start = millis();
 	}
 
 }rxLoopTime;
-
 
 /* ================================================================================================== */
 // LoRa State
@@ -226,13 +209,12 @@ int status_lora;
 volatile bool rx_flag = false;
 volatile bool tx_flag = false;
 volatile bool transmit = false;
+volatile bool operationDone = false;
 volatile LoRaState lora_state = LoRaState::IDLE;
 
-uint32_t lora_tx_end_time;
 uint32_t printV;
 uint32_t serialEndTime;
 uint32_t tx_time;
-volatile bool operationDone = false;
 uint32_t lastCount = 0;
 
 bool tx_time_flag = false;
@@ -240,29 +222,79 @@ bool tx_time_flag = false;
 float lora_rssi;
 
 uint32_t serialInTime;
-uint32_t state;
+int state;
 uint32_t reciveTime;
 bool flagAgain = false;
 int count = 0;
 String oldString = "";
 
+int lossing[500] = {0};
+String slossing[500];
+int i = 0;
 int c = 0;
 int t = 0;
-uint32_t simulate = millis();
-uint32_t loopSimulate = millis();
+int r = 0;
+bool sim = false;
+uint32_t re = 1750;
+uint32_t simT;
+uint32_t simulate;
+uint32_t loopSimulate;
 void serialReadTask();
 void rx();
 
-void countLost(String s){
-  s.trim();          // remove whitespace/newlines
-  int value = s.toInt();
 
-  if (value - c != 1 && value - c > 0) {
-      t++;
+void countLostInt(int value ){
+  uint8_t s = 0;
+  uint8_t f = 0;
+
+  if (value - c != 1) {
+    rxLoopTime.fstage = "FALSE\t" + rxLoopTime.fstage;
   }
+  else{
+    rxLoopTime.fstage = "SUCCESS\t" + rxLoopTime.fstage;
+  }
+  lossing[i] = r;
+  slossing[i] = rxLoopTime.fstage;
+  i++;
+  
+  Serial.println("value: " + String(value) + ", c: " + String(c));
   c = value;
-  Serial.println("Lost: " + String(t));
+  Serial.print("Lost: ");
+  for(int j = 0;j < i;j++){
+    if(slossing[j][0] == 'S'){
+      Serial.print(lossing[j]);
+      Serial.print(" : ");
+      Serial.print(slossing[j]);
+      Serial.println();
+      s++;
+    }
+  }
+
+  for(int j = 0;j < i;j++){
+    if(slossing[j][0] == 'F'){
+      Serial.print(lossing[j]);
+      Serial.print(" : ");
+      Serial.print(slossing[j]);
+      Serial.println();
+      f++;
+    }
+  }
+
+  Serial.println("SUCCES : " + String(s) + "\tFAIL : " + String(f));
+
 }
+
+void simulatetransmitting(){
+  if(sim){
+    if(millis() > simulate && !rxLoopTime.tx_flag_get()){
+      // countLostInt(lastCount);
+      tx_data = String(r);
+      rxLoopTime.transmit();
+      if(r > 2000)
+        while (1){ delay(100);}
+    }
+  }
+};
 
 String clean(String s) {
   s.trim();          // remove whitespace/newlines
@@ -299,7 +331,7 @@ void setup()
 
   Serial.println("Connected");
 
-  spi1.begin(); // initialize SPI bus
+  SPI.begin(); // initialize SPI bus
 
   Serial.println("SPI begin");
 
@@ -322,10 +354,14 @@ void setup()
 
   tx_time = millis();
 
-  lora.setDio1Action(setFlag);  
+  lora.setDio0Action(setFlag,RISING);
 
   lora.startReceive();
   rxLoopTime.begin();
+
+  simT = millis();
+  simulate = millis();
+  loopSimulate = millis();
 }
 
 void loop(){
@@ -333,6 +369,8 @@ void loop(){
 }
 
 void serialReadTask() {
+
+
   if (Serial.available() && !tx_flag)
   {
     tx_data = "";
@@ -345,7 +383,7 @@ void serialReadTask() {
             serialEndTime = millis();
         }
     }
-    if (tx_data.substring(0, 4) == "freq ")
+    if (tx_data.substring(0, 4) == "freq")
     {
       String freqStr = tx_data.substring(4);
       freqStr.trim();
@@ -358,7 +396,7 @@ void serialReadTask() {
     }
     else
     {
-      rxLoopTime.transmit(tx_data);
+      rxLoopTime.transmit();
     }
     Serial.print("Get Serial");
   }
@@ -366,11 +404,30 @@ void serialReadTask() {
 
 void rx()
 {
+  if(re >= 1){
+    re = 0;
+    if(!sim && !tx_flag){
+      countLostInt(lastCount);
+      sim = true;
+      simulate = millis() + r;
+      r += 20;
+    }
+    simT = millis();
+
+  }
+
+  simulatetransmitting();
 
   serialReadTask();
 
   if(rxLoopTime.transmitOrNot()){ 
     transmitting();
+    sim = false;
+
+    Serial.print("delay time: ");
+    Serial.println(millis() - simT);
+    Serial.print("timeNow");
+    Serial.println(millis());
   }
 
   if(operationDone){
@@ -384,23 +441,30 @@ void rx()
     }
     else
     {
+      re++;
+      rx_flag = false;
+
       String s;
       state = lora.readData(s);
 
+      delay(1);
       if(state == RADIOLIB_ERR_NONE) {
+
         rxLoopTime.receive(lora.getTimeOnAir(s.length()));
         
         lastCount = s.toInt();
-
+        // if(rxLoopTime.tx_flag_get()){
+        //   countLost(s);
+        // }
         s = clean(s);
         
         lora_rssi = lora.getRSSI();
-        s += ',';
-        s += lora_rssi;
-        s += ',';
-        s += lora.getSNR();
-        s += ',';
-        s += lora.getPacketLength();
+        // s += ',';
+        // s += lora_rssi;
+        // s += ',';
+        // s += lora.getSNR();
+        // s += ',';
+        // s += lora.getPacketLength();
 
         Serial.print("RSSI: ");
         Serial.println(lora_rssi);
@@ -409,16 +473,18 @@ void rx()
         
         Serial.println(s);
 
+        Serial.println(t);
+
         Serial.println("[RECEIVING...]");
       }
       else {
         Serial.print("Receive failed, code: ");
         Serial.println(state);
       }
-    
-      lora_state = LoRaState::RECEIVING;
-      lora.startReceive();
-      Serial.println("[RECEIVING...]");
+        // lora.finishReceive();
+        lora_state = LoRaState::RECEIVING;
+        lora.startReceive();
+        Serial.println("[RECEIVING...]");
     }
   }
 }

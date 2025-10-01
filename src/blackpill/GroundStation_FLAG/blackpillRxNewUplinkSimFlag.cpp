@@ -226,7 +226,7 @@ bool tx_time_flag = false;
 float lora_rssi;
 
 uint32_t serialInTime;
-uint32_t state;
+int state;
 uint32_t reciveTime;
 bool flagAgain = false;
 int count = 0;
@@ -239,7 +239,7 @@ int c = 0;
 int t = 0;
 int r = 0;
 bool sim = false;
-uint8_t re = 1750;
+uint32_t re = 1750;
 uint32_t simT;
 uint32_t simulate;
 uint32_t loopSimulate;
@@ -387,9 +387,9 @@ void serialReadTask() {
             serialEndTime = millis();
         }
     }
-    if (tx_data.substring(0, 9) == "cmd freq ")
+    if (tx_data.substring(0, 4) == "freq ")
     {
-      String freqStr = tx_data.substring(9);
+      String freqStr = tx_data.substring(4);
       freqStr.trim();
       const float freq = freqStr.toFloat();
       lora.setFrequency(freq);

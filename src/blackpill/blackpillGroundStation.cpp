@@ -345,9 +345,9 @@ void serialReadTask() {
             serialEndTime = millis();
         }
     }
-    if (tx_data.substring(0, 9) == "cmd freq ")
+    if (tx_data.substring(0, 4) == "freq ")
     {
-      String freqStr = tx_data.substring(9);
+      String freqStr = tx_data.substring(4);
       freqStr.trim();
       const float freq = freqStr.toFloat();
       lora.setFrequency(freq);
