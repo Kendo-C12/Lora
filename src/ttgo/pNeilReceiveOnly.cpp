@@ -29,6 +29,9 @@ int16_t state;
 
 uint32_t rxTime;
 
+String tx_data;
+uint32_t serialEndTime;
+
 void loraSetup(){
   
   Serial.println("Initializing SX1262...");
@@ -103,6 +106,34 @@ void setFlag(void) {
   receivedFlag = true;
 }
 
+
+void serialReadTask() {
+  if (Serial.available())
+  {
+    tx_data = "";
+    serialEndTime = millis();
+    while(millis() - serialEndTime < 10){
+        while (Serial.available()){
+            tx_data += static_cast<char>(Serial.read());
+            serialEndTime = millis();
+        }
+    }
+    if (tx_data.substring(0, 4) == "freq")
+    {
+      String freqStr = tx_data.substring(4);
+      freqStr.trim();
+      const float freq = freqStr.toFloat();
+      lora.setFrequency(freq);
+      EEPROM.put<float>(0, freq);
+      Serial.print("SetFrequencyTo ");
+      Serial.print(freq);
+      Serial.println("MHz");
+      lora.startReceive();
+    }
+    // Serial.print("Get Serial");
+  }
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -137,6 +168,7 @@ void setup() {
 }
 
 void loop() {
+  serialReadTask();
   // check if the flag is set
   if(receivedFlag) {
     // reset flag
@@ -145,8 +177,8 @@ void loop() {
     // you can read received data as an Arduino String
     String str;
     int state = lora.readData(str);
-    lora.sleep();
-    lora.standby();
+
+    delay(1);
 
     // you can also read received data as byte array
     /*
@@ -157,26 +189,26 @@ void loop() {
 
     if (state == RADIOLIB_ERR_NONE) {
       // packet was successfully received
-      Serial.println(F("[SX1278] Received packet!"));
+      // Serial.println(F("[SX1278] Received packet!"));
 
-      // print data of the packet
-      Serial.print(F("[SX1278] Data:\t\t"));
+      // // print data of the packet
+      // Serial.print(F("[SX1278] Data:\t\t"));
       Serial.println(str);
 
-      // print RSSI (Received Signal Strength Indicator)
-      Serial.print(F("[SX1278] RSSI:\t\t"));
-      Serial.print(lora.getRSSI());
-      Serial.println(F(" dBm"));
+      // // print RSSI (Received Signal Strength Indicator)
+      // Serial.print(F("[SX1278] RSSI:\t\t"));
+      // Serial.print(lora.getRSSI());
+      // Serial.println(F(" dBm"));
 
-      // print SNR (Signal-to-Noise Ratio)
-      Serial.print(F("[SX1278] SNR:\t\t"));
-      Serial.print(lora.getSNR());
-      Serial.println(F(" dB"));
+      // // print SNR (Signal-to-Noise Ratio)
+      // Serial.print(F("[SX1278] SNR:\t\t"));
+      // Serial.print(lora.getSNR());
+      // Serial.println(F(" dB"));
 
-      // print frequency error
-      Serial.print(F("[SX1278] Frequency error:\t"));
-      Serial.print(lora.getFrequencyError());
-      Serial.println(F(" Hz"));
+      // // print frequency error
+      // Serial.print(F("[SX1278] Frequency error:\t"));
+      // Serial.print(lora.getFrequencyError());
+      // Serial.println(F(" Hz"));
 
     } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
       // packet was received, but is malformed

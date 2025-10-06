@@ -141,6 +141,8 @@ struct LoopTime{
 
 	bool transmitOrNot(){
     if(tx_flag){
+      tx_flag = false;
+      return true;
       print();
       if(millis() - start >= 1999){
         start = millis();
@@ -359,7 +361,17 @@ void serialReadTask() {
     }
     else
     {
-      rxLoopTime.transmit(tx_data);
+      if(tx_data.substring(0, 3) == "now"){
+        tx_data = tx_data.substring(4);
+        rxLoopTime.transmit(tx_data);
+        if(rxLoopTime.transmitOrNot()){ 
+          // delay(200);
+          transmitting();
+        }
+      }
+      else{
+        rxLoopTime.transmit(tx_data);
+      }
     }
     // Serial.print("Get Serial");
   }
@@ -369,10 +381,6 @@ void rx()
 {
 
   serialReadTask();
-
-  if(rxLoopTime.transmitOrNot()){ 
-    transmitting();
-  }
 
   if(operationDone){
     operationDone = false;
@@ -418,6 +426,10 @@ void rx()
       lora_state = LoRaState::RECEIVING;
       lora.startReceive();
       Serial.println("[RECEIVING...]");
+    }
+    if(rxLoopTime.transmitOrNot()){ 
+      delay(200);
+      transmitting();
     }
   }
 }
