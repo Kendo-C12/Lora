@@ -17,10 +17,10 @@ constexpr struct
     float center_freq = 921.500000f; // MHz
     float bandwidth = 125.f;         // kHz
     uint8_t spreading_factor = 9;    // SF: 6 to 12
-    uint8_t coding_rate = 8;         // CR: 5 to 8
+    uint8_t coding_rate = 7;         // CR: 5 to 8
     uint8_t sync_word = 0x12;        // Private SX1262
     int8_t power = 20;               // up to 22 dBm for SX1262
-    uint16_t preamble_length = 16;
+    uint16_t preamble_length = 8;
 } lora_params;
 
 // Initialize SX1276 module

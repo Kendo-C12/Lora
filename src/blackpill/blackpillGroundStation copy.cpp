@@ -345,7 +345,7 @@ void serialReadTask() {
             serialEndTime = millis();
         }
     }
-    if (tx_data.substring(0, 4) == "freq")
+    if (tx_data.substring(0, 4) == "freq ")
     {
       String freqStr = tx_data.substring(4);
       freqStr.trim();
@@ -394,18 +394,18 @@ void rx()
 
         s = clean(s);
         
-        // lora_rssi = lora.getRSSI();
-        // s += ',';
-        // s += lora_rssi;
-        // s += ',';
-        // s += lora.getSNR();
-        // s += ',';
-        // s += lora.getPacketLength();
+        lora_rssi = lora.getRSSI();
+        s += ',';
+        s += lora_rssi;
+        s += ',';
+        s += lora.getSNR();
+        s += ',';
+        s += lora.getPacketLength();
 
         // Serial.print("RSSI: ");
         // Serial.println(lora_rssi);
         
-        Serial.println(s);
+        Serial.println("[RECEIVED],"+s);
       }
       else {
         Serial.print("ReceiveFailed,Code: ");

@@ -1,34 +1,31 @@
-#include <Arduino.h>
-
-#include <RadioLib.h>
 #include <SPI.h>
+#include <RadioLib.h>
 #include <EEPROM.h>
 
 
-#define LORA_MOSI PA7
-#define LORA_MISO PA6
-#define LORA_SCLK PA5
+// SX1276 pin connections for TTGO LoRa32 V1
+#define SCK 5
+#define MISO 19
+#define MOSI 27
+#define SS 18
+#define RST 14
+#define DIO0 26
+#define DIO1 13
 
-SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  // Using hardware SPI (MISO,MOSI,SCLK)
-
-SPISettings lora_spi_settings(8000000, MSBFIRST, SPI_MODE0); // 8 MHz for Mega2560
-
-constexpr struct {
-    float center_freq = 920.400000f;  // MHz
-    float bandwidth   = 125.f;     // kHz
-    uint8_t spreading_factor = 9;  
-    uint8_t coding_rate = 8;       
-    uint8_t sync_word = 0x12;      
-    int8_t power = 22;             
-    uint16_t preamble_length = 16;
+constexpr struct
+{
+    float center_freq = 921.500000f; // MHz
+    float bandwidth = 125.f;         // kHz
+    uint8_t spreading_factor = 9;    // SF: 6 to 12
+    uint8_t coding_rate = 7;         // CR: 5 to 8
+    uint8_t sync_word = 0x12;        // Private SX1262
+    int8_t power = 20;               // up to 22 dBm for SX1262
+    uint16_t preamble_length = 8;
 } lora_params;
 
-#define LORA_NSS   PA4
-#define LORA_DIO1  PB8
-#define LORA_NRST  PB7
-#define LORA_BUSY  PB6
+// Initialize SX1276 module
+SX1276 lora = new Module(SS, DIO0, RST, DIO0);
 
-SX1262 lora = new Module(LORA_NSS, LORA_DIO1, LORA_NRST, LORA_BUSY, spi1, lora_spi_settings);
 
 void loraSetup(){
   
@@ -144,17 +141,19 @@ struct LoopTime{
 
 	bool transmitOrNot(){
     if(tx_flag){
-      // print();
+      tx_flag = false;
+      return true;
+      print();
       if(millis() - start >= 1999){
         start = millis();
         lora_tx_end_time = millis() + 50 + (lora.getTimeOnAir(len)) / 1000;
       }
-      // if((millis() - start > 50
-      if((millis() - start > loraTxTimeOnAir.sum() 
+      if((millis() - start > 50
+      // if((millis() - start > loraTxTimeOnAir.sum() 
         && duration.sum() - (millis() - start) > loraTxTimeOnAir.sum() ) 
           || duration.len == 0 
-          // || millis() - start > 2000*2) // duration.sum()
-          || millis() - startReal > duration.sum()*2) // duration.sum()
+          || millis() - start > 2000*2) // duration.sum()
+          // || millis() - startReal > duration.sum()*2) // duration.sum()
       {
         Serial.print("\t\tWait Time: ");
         Serial.println(millis() - startTx);
@@ -240,7 +239,7 @@ bool tx_time_flag = false;
 float lora_rssi;
 
 uint32_t serialInTime;
-uint32_t state;
+int state;
 uint32_t reciveTime;
 bool flagAgain = false;
 int count = 0;
@@ -299,7 +298,7 @@ void setup()
 
   Serial.println("Connected");
 
-  spi1.begin(); // initialize SPI bus
+  SPI.begin(); // initialize SPI bus
 
   Serial.println("SPI begin");
 
@@ -322,10 +321,13 @@ void setup()
 
   tx_time = millis();
 
-  lora.setDio1Action(setFlag);  
+  lora.setDio0Action(setFlag,RISING);  
 
   lora.startReceive();
   rxLoopTime.begin();
+
+  tx_flag = false;
+  operationDone = false;
 }
 
 void loop(){
@@ -355,10 +357,16 @@ void serialReadTask() {
       Serial.print("SetFrequencyTo ");
       Serial.print(freq);
       Serial.println("MHz");
+      lora.startReceive();
     }
     else
     {
+      // tx_data = tx_data.substring(4);
       rxLoopTime.transmit(tx_data);
+      if(rxLoopTime.transmitOrNot()){ 
+        // delay(200);
+        transmitting();
+      }
     }
     // Serial.print("Get Serial");
   }
@@ -368,10 +376,6 @@ void rx()
 {
 
   serialReadTask();
-
-  if(rxLoopTime.transmitOrNot()){ 
-    transmitting();
-  }
 
   if(operationDone){
     operationDone = false;
@@ -387,6 +391,8 @@ void rx()
       String s;
       state = lora.readData(s);
 
+      // lora.standby();
+      delay(1);
       if(state == RADIOLIB_ERR_NONE) {
         rxLoopTime.receive(lora.getTimeOnAir(s.length()));
         
@@ -394,18 +400,18 @@ void rx()
 
         s = clean(s);
         
-        // lora_rssi = lora.getRSSI();
-        // s += ',';
-        // s += lora_rssi;
-        // s += ',';
-        // s += lora.getSNR();
-        // s += ',';
-        // s += lora.getPacketLength();
+        lora_rssi = lora.getRSSI();
+        s += ',';
+        s += lora_rssi;
+        s += ',';
+        s += lora.getSNR();
+        s += ',';
+        s += lora.getPacketLength();
 
         // Serial.print("RSSI: ");
         // Serial.println(lora_rssi);
         
-        Serial.println(s);
+        Serial.println("[RECEIVED],"+s);
       }
       else {
         Serial.print("ReceiveFailed,Code: ");
