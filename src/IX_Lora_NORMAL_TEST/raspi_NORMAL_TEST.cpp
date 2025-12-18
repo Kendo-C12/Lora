@@ -1,6 +1,3 @@
-#define SERIAL_RX_BUFFER_SIZE 16384
-#define SERIAL_TX_BUFFER_SIZE 16384
-
 #include <Arduino.h>
 
 #include <RadioLib.h>
@@ -122,6 +119,8 @@ float climbRate = 0;
 float highestBaro = 0;
 float highestGPS = 0;
 
+// SERIAL
+int number_of_data;
 
 // VALUE
 /*
@@ -240,9 +239,10 @@ void setup() {
 
 void loop(){
   // RASPI RX
+  number_of_data = raspi.available();
   while(raspi.available()){
     delay(1);
-    // Serial.println("IN RASPI RX");
+    Serial.println("NUMBER OF DATA: " + String(number_of_data));
     if (stm32_state == NORMAL && !packet.empty()) break;
     
     n = raspi.readBytes(buffer,MAXBUFFER);
