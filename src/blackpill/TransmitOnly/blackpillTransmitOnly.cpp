@@ -14,7 +14,7 @@ SPISettings lora_spi_settings(8000000, MSBFIRST, SPI_MODE0); // 8 MHz for Mega25
 constexpr struct {
     float center_freq = 915.000000f;  // MHz
     float bandwidth   = 125.f;     // kHz
-    uint8_t spreading_factor = 9;  
+    uint8_t spreading_factor = 12;  
     uint8_t coding_rate = 8;       
     uint8_t sync_word = 0x12;      
     int8_t power = -9;             
@@ -137,30 +137,33 @@ void setup() {
 }
 
 void loop() {
-  if(millis() - last_time_line > 2000){
-    line = String(t);
+  if(millis() - last_time_line > 5000){
+    // line = String(t);
 
-    // line += "<3>";
-    // line += ",";
-    // line += String(t);
-    // line += ",";
-    // line += stateR;
-    // line += ",";
-    // line += String(random(50, 150)); // lat
-    // line += ",";
-    // line += String(random(50, 150)); // lon
-    // line += ",";
-    // line += String(random(50, 150)); // alt
-    // line += ",";
-    // line += String(random(50, 150)); // apogee
-    // line += ",";
-    // line += String(random(50, 150)); // volMon
-    // line += ",";
-    // line += String(last_ack);
-    // line += ",";
-    // line += String(last_nack);
+    line = "";
+    line += "<3>";
+    line += ",";
+    line += String(t);
+    line += ",";
+    line += stateR;
+    line += ",";
+    line += String(random(50, 150)); // lat
+    line += ",";
+    line += String(random(50, 150)); // lon
+    line += ",";
+    line += String(random(50, 150)); // alt
+    line += ",";
+    line += String(random(50, 150)); // apogee
+    line += ",";
+    line += String(random(50, 150)); // volMon
+    line += ",";
+    line += String(last_ack);
+    line += ",";
+    line += String(last_nack);
 
     last_time_line = millis();
+
+    Serial.println(line);
   }
 
 
@@ -169,7 +172,7 @@ void loop() {
     lora_state = LoRaState::TRANSMITTING;
     lora.startTransmit(line);
     lora_tx_end_time = millis() + 10 + (lora.getTimeOnAir(line.length())) / 1000;
-    Serial.println("[TRANSMITTING...]"); 
+    // Serial.println("[TRANSMITTING...]"); 
     ++t;
 
     last_time = millis();

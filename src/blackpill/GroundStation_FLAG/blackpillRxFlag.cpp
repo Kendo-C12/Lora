@@ -13,14 +13,15 @@ SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  // Using hardware SPI (MISO,MOSI,
 SPISettings lora_spi_settings(8000000, MSBFIRST, SPI_MODE0); // 8 MHz for Mega2560
 
 constexpr struct {
-    float center_freq = 920.400000f;  // MHz
+    float center_freq = 915.000000f;  // MHz
     float bandwidth   = 125.f;     // kHz
-    uint8_t spreading_factor = 9;  
+    uint8_t spreading_factor = 12;  
     uint8_t coding_rate = 8;       
     uint8_t sync_word = 0x12;      
-    int8_t power = 22;             
+    int8_t power = -9;             
     uint16_t preamble_length = 16;
 } lora_params;
+
 
 #define LORA_NSS   PA4
 #define LORA_DIO1  PB8
@@ -172,13 +173,13 @@ void setup()
   Serial.print("success");
 
   float freq;
-  EEPROM.get<float>(0, freq);
-  if(freq > 800){
-    lora.setFrequency(freq);
-    Serial.print("Set frequency to ");
-    Serial.print(freq);
-    Serial.println("MHz");
-  } 
+  // EEPROM.get<float>(0, freq);
+  // if(freq > 800){
+  //   lora.setFrequency(freq);
+  //   Serial.print("Set frequency to ");
+  //   Serial.print(freq);
+  //   Serial.println("MHz");
+  // } 
 
   lora_tx_end_time = millis();
   tx_time = millis();

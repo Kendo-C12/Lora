@@ -12,9 +12,9 @@ SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  // Using hardware SPI (MISO,MOSI,
 SPISettings lora_spi_settings(8000000, MSBFIRST, SPI_MODE0); // 8 MHz for Mega2560
 
 constexpr struct {
-    float center_freq = 920.400000f;  // MHz
+    float center_freq = 915.000000f;  // MHz
     float bandwidth   = 125.f;     // kHz
-    uint8_t spreading_factor = 9;  
+    uint8_t spreading_factor = 10;  
     uint8_t coding_rate = 8;       
     uint8_t sync_word = 0x12;      
     int8_t power = -9;             
@@ -93,6 +93,7 @@ int transmissionState = RADIOLIB_ERR_NONE;
 
 bool transmitFlag = false;
 
+bool intx = false;
 int state;
 uint8_t t;
 uint8_t last_ack;
@@ -110,6 +111,7 @@ unsigned long last_time;
 unsigned long last_time_line;
 
 void setFlag(void) {
+  Serial.println("INTERRUPT");
   operationDone = true;
 }
 
@@ -145,7 +147,8 @@ void loop() {
     printV = millis() + 500;
   }
 
-  if(millis() - last_time_line > 2000){
+  if(!intx && millis() - last_time_line > 2000){
+    intx = true;
     line = "";
 
     line += "<3>";
@@ -191,6 +194,7 @@ void loop() {
     if(tx_flag){
       // Set Tx Done
       tx_flag = false;
+      intx = false;
       lora_state = LoRaState::RECEIVING;
       lora.startReceive();
       Serial.println("[RECEIVING...]");

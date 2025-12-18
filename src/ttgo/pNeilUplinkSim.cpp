@@ -18,7 +18,7 @@ constexpr struct {
     uint8_t spreading_factor = 9;  
     uint8_t coding_rate = 8;       
     uint8_t sync_word = 0x12;      
-    int8_t power = 20;             
+    int8_t power = 0;             
     uint16_t preamble_length = 16;
 } lora_params;
 

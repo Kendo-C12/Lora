@@ -12,11 +12,11 @@
 #define DIO0 26
 #define DIO1 13
 
-constexpr struct
-{
-    float center_freq = 921.500000f; // MHz
+SPISettings lora_spi_settings(2000000, MSBFIRST, SPI_MODE0); // 8 MHz for Mega2560
+constexpr struct{
+    float center_freq = 921.50000f; // MHz
     float bandwidth = 125.f;         // kHz
-    uint8_t spreading_factor = 9;    // SF: 6 to 12
+    uint8_t spreading_factor = 12;    // SF: 6 to 12
     uint8_t coding_rate = 8;         // CR: 5 to 8
     uint8_t sync_word = 0x12;        // Private SX1262
     int8_t power = 20;               // up to 22 dBm for SX1262
@@ -24,7 +24,7 @@ constexpr struct
 } lora_params;
 
 // Initialize SX1276 module
-SX1276 lora = new Module(SS, DIO0, RST, DIO0);
+SX1276 lora = new Module(SS, DIO0, RST, DIO0, SPI, lora_spi_settings);
 
 
 void loraSetup(){
@@ -63,7 +63,8 @@ void loraSetup(){
   Serial.print("SetCRC: ");
   Serial.println(lora_state);
 
-  lora_state = lora.autoLDRO();
+  // lora_state = lora.autoLDRO();
+  lora_state = lora.forceLDRO(true);
   Serial.print("AutoLDRO: ");
   Serial.println(lora_state);
 
@@ -310,12 +311,12 @@ void setup()
 
   float freq;
   EEPROM.get<float>(0, freq);
-  if(freq > 800){
-    lora.setFrequency(freq);
-    Serial.print("SetFrequencyTo ");
-    Serial.print(freq);
-    Serial.println("MHz");
-  } 
+  // if(freq > 800){
+  //   lora.setFrequency(freq);
+  //   Serial.print("SetFrequencyTo ");
+  //   Serial.print(freq);
+  //   Serial.println("MHz");
+  // } 
 
   tx_time = millis();
 
@@ -381,14 +382,14 @@ void rx()
         tx_flag = false;
         lora_state = LoRaState::RECEIVING;
         lora.startReceive();
-        Serial.println("[RECEIVING...]");
+        // Serial.println("[RECEIVING...]");
     }
     else
     {
       String s;
       state = lora.readData(s);
 
-      // lora.standby();
+      lora.standby();
       delay(1);
       if(state == RADIOLIB_ERR_NONE) {
         rxLoopTime.receive(lora.getTimeOnAir(s.length()));
@@ -408,7 +409,7 @@ void rx()
         // Serial.print("RSSI: ");
         // Serial.println(lora_rssi);
         
-        Serial.println("[RECEIVED],"+s);
+        Serial.println(s);
       }
       else {
         Serial.print("ReceiveFailed,Code: ");
@@ -417,7 +418,7 @@ void rx()
     
       lora_state = LoRaState::RECEIVING;
       lora.startReceive();
-      Serial.println("[RECEIVING...]");
+      // Serial.println("[RECEIVING...]");
     }
   }
 }

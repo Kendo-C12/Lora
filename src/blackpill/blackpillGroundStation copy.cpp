@@ -9,9 +9,10 @@
 #define LORA_MISO PA6
 #define LORA_SCLK PA5
 
-SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  // Using hardware SPI (MISO,MOSI,SCLK)
+//               MISO     MOSI      SCLK
+SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  
 
-SPISettings lora_spi_settings(8000000, MSBFIRST, SPI_MODE0); // 8 MHz for Mega2560
+SPISettings lora_spi_settings(8000000, MSBFIRST, SPI_MODE0);
 
 constexpr struct {
     float center_freq = 920.400000f;  // MHz
