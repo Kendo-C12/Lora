@@ -3,28 +3,21 @@
 #include <RadioLib.h>
 #include <SPI.h>
 
-#define LORA_MOSI PA7
-#define LORA_MISO PA6
-#define LORA_SCLK PA5
+#include "pinoutSX1262.h"
 
 SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  // Using hardware SPI (MISO,MOSI,SCLK)
 
 SPISettings lora_spi_settings(8000000, MSBFIRST, SPI_MODE0); // 8 MHz for Mega2560
 
 constexpr struct {
-    float center_freq = 915.000000f;  // MHz
+    float center_freq = 921.500000f;  // MHz
     float bandwidth   = 125.f;     // kHz
     uint8_t spreading_factor = 12;  
     uint8_t coding_rate = 8;       
     uint8_t sync_word = 0x12;      
-    int8_t power = -9;             
+    int8_t power = 10;             
     uint16_t preamble_length = 16;
 } lora_params;
-
-#define LORA_NSS   PA4
-#define LORA_DIO1  PB8
-#define LORA_NRST  PB7
-#define LORA_BUSY  PB6
 
 SX1262 lora = new Module(LORA_NSS, LORA_DIO1, LORA_NRST, LORA_BUSY, spi1, lora_spi_settings);
 
@@ -109,6 +102,8 @@ volatile bool tx_flag = false;
 unsigned long last_time;
 unsigned long last_time_line;
 
+bool inTx = false;
+
 void setFlag(void) {
   rx_flag = true;
 }
@@ -137,7 +132,8 @@ void setup() {
 }
 
 void loop() {
-  if(millis() - last_time_line > 5000){
+  if(millis() - last_time_line > 5000 && !inTx){
+    inTx = true;
     // line = String(t);
 
     line = "";
@@ -168,7 +164,7 @@ void loop() {
 
 
   if(millis() - last_time > 2000){
-
+    inTx = false;
     lora_state = LoRaState::TRANSMITTING;
     lora.startTransmit(line);
     lora_tx_end_time = millis() + 10 + (lora.getTimeOnAir(line.length())) / 1000;
