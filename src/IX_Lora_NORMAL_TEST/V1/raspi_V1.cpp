@@ -1,5 +1,5 @@
 
-#define MAXPACKETLENGTH 240
+#define MAXPACKETLENGTH 245
 #define MAXPACKET 12
 #define MAXBUFFER MAXPACKETLENGTH * MAXPACKET
 
@@ -21,7 +21,7 @@
 #include <SparkFun_u-blox_GNSS_v3.h>
 
 // ENABLE MS8607 BAROMETER AND UBLOX GNSS V3
-#define ENABLE_SENSOR 0
+#define ENABLE_SENSOR 1
 
 // Lora
 SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  
@@ -52,7 +52,7 @@ volatile bool txFlag = false;
 int n,i;
 
 // PACKET CONFIG
-uint8_t maxPacket = 245;
+uint8_t maxPacket = MAXPACKETLENGTH - 10;
 
 // COUNTING
 uint8_t frameCount;
@@ -72,11 +72,12 @@ String header,ender;
 byte chunk[MAXPACKET][MAXPACKETLENGTH];
 int current_chunk = 0;
 int lenChunk = 0;
+String tem;
 
 // PACKET
 byte* top_packet;
 FixedQueue<std::pair<byte*,int>>packet(MAXPACKET);
-int packet_left = 255;
+int packet_left = 0;
 
 // STATE
 uint8_t stm32_state;
@@ -169,12 +170,13 @@ extern void printByte(byte* byteArr,int len);
 // SETUP
 void setup() {
   Serial.begin(115200);
-  raspi.begin(115200);
-  raspi.setTimeout(50);
+  raspi.begin(38400);
+  // raspi.setTimeout(50);
   // while(!Serial);
   delay(4000);
 
-  Serial.println("RX BUFFER SIZE: " + String(SERIAL_RX_BUFFER_SIZE));
+  Serial.print("RX BUFFER SIZE: ");
+  Serial.println(SERIAL_RX_BUFFER_SIZE);
 
   Serial.println(F("[SX1262] Initializing ... "));
 
@@ -253,9 +255,10 @@ void loop(){
   // RASPI RX
   if(raspi.available()){
     Serial.println("RASPI TASK RX");
+
     n = raspi.readBytes(buffer,MAXBUFFER);
     if(n > 3000) return;
-    byte_receiv += n;
+    byte_receiv = n;
     Serial.println("Receiving success");
   
     header = byteToString(buffer,0,1);
@@ -264,7 +267,6 @@ void loop(){
     Serial.print("PACKET LENGTH: ");
     Serial.println(n);
     handle_command(header);
-    // digitalWrite(LED_BUILTIN,LOW);
   }
 
   // RASPI TX
@@ -272,16 +274,17 @@ void loop(){
     Serial.println("RASPI TASK TX");
     last.get_packet = millis();
     if (stm32_state == NORMAL && packet.empty()){
-      raspi.println("PACKET_PLEASE");
+      raspi.println("PACK");
+      Serial.println("PACK");
     }
     if (stm32_state == APOGEE){
-      raspi.println("CMD_APOGEE");
+      raspi.println("APO");
+      Serial.println("APO");
     } 
   }
 
   // FLAG
-  if(txFlag /* ||(inTx && millis() - tx_start > (ToA * 2) )*/){
-    // if(inTx && millis() - tx_start > ToA * 2) Serial.println("FLAG BY MAXIMUM TOA");
+  if(txFlag){
     Serial.println("FLAG TASK");
     txFlag = false;
     inTx = false;
@@ -298,30 +301,37 @@ void loop(){
   // RADIO
   if(!inTx) {
     if(!packet.empty()){
-    Serial.println("RADIO TASK");
+      Serial.println("RADIO TASK");
       inTx = true;
 
       top_packet = packet.getFront().first;
       lenChunk = packet.getFront().second;
       // top_packet = "Hello,world";
 
-      packet_left = onebyteToInt(top_packet,lenChunk-1);
-      
-      state = radio.startTransmit(top_packet,lenChunk);
+      if(lenChunk > 0) {
+          packet_left = onebyteToInt(top_packet,lenChunk-1);
+          Serial.print("len chunk");
+          Serial.println(lenChunk);
+          state = radio.startTransmit(top_packet,lenChunk);
 
-      ToA =  radio.getTimeOnAir(lenChunk)/ (1000.0);
-      if (state == RADIOLIB_ERR_NONE) {
-        Serial.println(F("[SX1262] Send packet!"));
-        Serial.print("[TOA]: ");
-        Serial.println(ToA);
-        Serial.print("[PACKET LEFT]: ");
-        Serial.println(packet_left);
-        Serial.print("PACKET LEFT FROM QUEUE: ");
-        Serial.println(packet.size());
-        tx_start = millis();
+          ToA =  radio.getTimeOnAir(lenChunk)/ (1000.0);
+          if (state == RADIOLIB_ERR_NONE) {
+            Serial.println(F("[SX1262] Send packet!"));
+            Serial.print("[TOA]: ");
+            Serial.println(radio.getTimeOnAir(lenChunk)/ (1000.0 * 1000.0));
+            Serial.print("[PACKET LEFT]: ");
+            Serial.println(packet_left);
+            Serial.print("PACKET LEFT FROM QUEUE: ");
+            Serial.println(packet.size());
+            tx_start = millis();
+          } else {
+            Serial.print(F("failed, code "));
+            Serial.println(state);
+          }
       } else {
-        Serial.print(F("failed, code "));
-        Serial.println(state);
+          // Handle invalid packet length (should not happen if logic is correct, but safe to pop)
+          packet.pop();
+          inTx = false; 
       }
     }
   }
@@ -331,41 +341,35 @@ void loop(){
     last.log = millis();
     
     Serial.println();
-    Serial.println("===============STATE===============");
+    // Serial.println("===============STATE===============");
     Serial.print("STATE stm32: ");
     Serial.println(stm32_state);
-    Serial.println("=============PACKETLEFT============");
+    // Serial.println("=============PACKETLEFT============");
     Serial.print("PACKET LEFT FROM QUEUE: ");
     Serial.println(packet.size());
-    Serial.println("===============RADIO===============");
+    // Serial.println("===============RADIO===============");
     Serial.print("IN TX: ");
     Serial.println(inTx);
-    Serial.println("==============BARO==============");
-    Serial.print("TEMPERATUE: ");
-    Serial.println(temp.temperature);
-    Serial.print("PRESSURE: ");
-    Serial.println(pressure.pressure);
-    Serial.print("HUMIDITY: ");
-    Serial.println(humidity.relative_humidity);
-    Serial.print("ALT: ");
-    Serial.println(altBaro);
-    Serial.println("===============GPS===============");
-    Serial.print("LAT: ");
-    Serial.println(lat);
-    Serial.print("LON: ");
-    Serial.println(lon);
-    Serial.print("ALT: ");
-    Serial.println(alt);
+    if(ENABLE_SENSOR){
+      Serial.println("==============BARO==============");
+      Serial.print("TEMPERATUE: ");
+      Serial.println(temp.temperature);
+      Serial.print("PRESSURE: ");
+      Serial.println(pressure.pressure);
+      Serial.print("HUMIDITY: ");
+      Serial.println(humidity.relative_humidity);
+      Serial.print("ALT: ");
+      Serial.println(altBaro);
+      Serial.println("===============GPS===============");
+      Serial.print("LAT: ");
+      Serial.println(lat);
+      Serial.print("LON: ");
+      Serial.println(lon);
+      Serial.print("ALT: ");
+      Serial.println(alt);
+    }
     Serial.println();
   }
-  
-  // INTERVAL
-  // if(millis() - last.raspi_check > interval.raspi_check){
-  //   Serial.println("RASPI TASK RX");
-  //   last.raspi_check = millis();
-  //   Serial.print("In queue: ");
-  //   Serial.println(packet.size());
-  // }
 
   if(ENABLE_SENSOR){
     Serial.println("SENSOR TASK");
@@ -422,7 +426,7 @@ void loop(){
     }
   }
   if(millis() - last_error_check > 100){
-    Serial.println("LED TASK");
+    // Serial.println("LED TASK");
     last_error_check = millis();
     digitalToggle(LED_BUILTIN);
   }
@@ -455,15 +459,16 @@ void handle_command(String command){
     alt = std::get<2>(gps);
 
     raspi.print("GPS,");
-    raspi.print(lat);
+    raspi.print(lat, 6);
     raspi.print(',');
-    raspi.print(lon);
+    raspi.print(lon, 6);
     raspi.print(',');
-    raspi.println(alt);
+    raspi.println(alt, 2);
 
   }
   else if(command == "IX" || command == "AP") // PICTURE
   {
+    // if(byte_receiv < 6) return
     if (stm32_state == NORMAL && !packet.empty()) return;
     header = byteToString(buffer,0,1);
     ender = byteToString(buffer,n-3,n-1);
@@ -472,7 +477,8 @@ void handle_command(String command){
     Serial.print("Get packet range raspi: ");
     Serial.println(n);
     if (ender != "END"){
-      Serial.println("DENEID PACKET: UNEXPECT ENDER " + ender);
+      Serial.print("ENDER FROM RASPI: ");
+    Serial.println(ender);
       return;
     }
     
@@ -485,7 +491,7 @@ void handle_command(String command){
       
       lenChunk = 0;
       // HEADER
-      lenChunk = stringToByte((header + ","),chunk[current_chunk],lenChunk); 
+      lenChunk = stringToByte((command + ","),chunk[current_chunk],lenChunk); 
       // FRAMECOUNT
       lenChunk = intToOneByte(frameCount,chunk[current_chunk],lenChunk);
       // PACKET
@@ -497,13 +503,22 @@ void handle_command(String command){
       
       i += maxPacket;
             
+      Serial.print("Chunk header: ");
+      tem = byteToString(chunk[current_chunk],0,1);
+      Serial.println(tem);
+      Serial.println(header);
+      
+      Serial.print("Chunk Ender: ");
+      tem = byteToString(chunk[current_chunk],lenChunk-2,lenChunk-2);
+      Serial.println(tem);
 
       packet.push(std::make_pair(chunk[current_chunk],lenChunk));
       Serial.print("PACKET LEFT TO SEPERATE: ");
       Serial.println(max(0,ceil(float(n)/maxPacket)));  
-      // printByte(chunk,lenChunk);
+      Serial.print("LEN CHUNK: ");
+      Serial.println(lenChunk);
       current_chunk++;
-      if(current_chunk > MAXPACKET) current_chunk = 0;
+      if(current_chunk >= MAXPACKET) current_chunk = 0;
     }
 
     frameCount += 1;
