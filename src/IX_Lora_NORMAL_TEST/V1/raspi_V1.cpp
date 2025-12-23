@@ -1,6 +1,6 @@
 
 #define MAXPACKETLENGTH 254
-#define MAXPACKET 20
+#define MAXPACKET 12
 #define MAXBUFFER MAXPACKETLENGTH * MAXPACKET
 
 
@@ -10,10 +10,7 @@
 #include <SPI.h>
 #include <EEPROM.h>
 
-#include <vector>
-#include <queue>
-#include <utility>
-#include <math.h>
+#include "fixed_queue.h"
 
 #include "pinoutSX1262.h"
 #include "config.h"
@@ -78,7 +75,7 @@ int lenChunk = 0;
 
 // PACKET
 byte* top_packet;
-std::queue<std::pair<byte*,int>>packet;
+FixedQueue<std::pair<byte*,int>>packet(MAXPACKET);
 int packet_left = 255;
 
 // STATE
@@ -130,7 +127,7 @@ float altGPS;
 sensors_event_t temp, pressure, humidity;    
 
 uint32_t uart_errors = 0;
-uint32_t last_error_check = 0;
+uint32_t last_error_check = millis();
 
 // VALUE
 /*
@@ -255,7 +252,7 @@ void setup() {
 void loop(){
   // RASPI RX
   while(raspi.available()){
-    digitalWrite(LED_BUILTIN,HIGH);
+    // digitalWrite(LED_BUILTIN,HIGH);
     Serial.println("AVAILABLE: " + String(raspi.available()));
     Serial.println("Start Receiving");
     Serial.println("HAVE RECEIVE: " + String(byte_receiv));
@@ -271,7 +268,7 @@ void loop(){
     Serial.println("ENDER FROM RASPI: " + ender);
     Serial.println("PACKET LENGTH: " + String(n));
     handle_command(header);
-    digitalWrite(LED_BUILTIN,LOW);
+    // digitalWrite(LED_BUILTIN,LOW);
   }
 
   // RASPI TX
@@ -291,7 +288,8 @@ void loop(){
     txFlag = false;
     inTx = false;
     if (stm32_state != NORMAL){
-      packet.push(std::move(packet.front()));
+      packet.push(packet.getFront());
+      packet.pop();
     }
     if (!packet.empty()){
       packet.pop();
@@ -304,8 +302,8 @@ void loop(){
     if(!packet.empty()){
       inTx = true;
 
-      top_packet = packet.front().first;
-      lenChunk = packet.front().second;
+      top_packet = packet.getFront().first;
+      lenChunk = packet.getFront().second;
       // top_packet = "Hello,world";
 
       packet_left = onebyteToInt(top_packet,lenChunk-1);
@@ -317,6 +315,7 @@ void loop(){
         Serial.println(F("[SX1262] Send packet!"));
         Serial.println("[TOA]: " + String(radio.getTimeOnAir(lenChunk)/ (1000.0 * 1000.0)));
         Serial.println("[PACKET LEFT]: " + String(packet_left));
+        Serial.println("PACKET LEFT FROM QUEUE: " + String(packet.size()));
         tx_start = millis();
       } else {
         Serial.print(F("failed, code "));
@@ -326,12 +325,11 @@ void loop(){
   }
 
   if (millis() - last.log > interval.log){
-    
     last.log = millis();
     
     Serial.println();
     Serial.println("===============STATE===============");
-    Serial.println("STATE RASPI: " + String(stm32_state));
+    Serial.println("STATE stm32: " + String(stm32_state));
     Serial.println("=============PACKETLEFT============");
     Serial.println("PACKET LEFT FROM QUEUE: " + String(packet.size()));
     // Serial.println("PACKET LEFT FROM COUNTING: " + String(packet_left));
@@ -412,32 +410,7 @@ void loop(){
   }
   if(millis() - last_error_check > 100){
     last_error_check = millis();
-    
-    // Read UART status register (STM32F1/F2/F4 compatible)
-    uint32_t sr = USART2->SR;
-    
-    if(sr & USART_SR_ORE){  // Overrun error
-      uart_errors++;
-      Serial.println("UART OVERRUN ERROR! Count: " + String(uart_errors));
-      // Clear by reading SR then DR
-      volatile uint32_t temp = USART2->SR;
-      temp = USART2->DR;
-      (void)temp; // Suppress unused warning
-    }
-    
-    if(sr & USART_SR_FE){  // Framing error
-      Serial.println("UART FRAMING ERROR!");
-      volatile uint32_t temp = USART2->SR;
-      temp = USART2->DR;
-      (void)temp;
-    }
-    
-    if(sr & USART_SR_NE){  // Noise error
-      Serial.println("UART NOISE ERROR!");
-      volatile uint32_t temp = USART2->SR;
-      temp = USART2->DR;
-      (void)temp;
-    }
+    digitalToggle(LED_BUILTIN);
   }
 }
 

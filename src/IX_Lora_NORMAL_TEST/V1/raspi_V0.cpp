@@ -4,10 +4,7 @@
 #include <SPI.h>
 #include <EEPROM.h>
 
-#include <vector>
-#include <queue>
-#include <utility>
-#include <math.h>
+#include "fixed_queue.h"
 
 #include "pinoutSX1262.h"
 #include "config.h"
@@ -70,7 +67,7 @@ int lenChunk = 0;
 
 // PACKET
 byte* top_packet;
-std::queue<std::pair<byte*,int>>packet;
+FixedQueue<std::pair<byte*,int>>packet(MAXPACKET);
 int packet_left = 255;
 
 // STATE
