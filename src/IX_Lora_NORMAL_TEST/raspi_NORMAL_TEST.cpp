@@ -79,7 +79,7 @@ int packet_left = 0;
 
 // MERGE PACKET
 uint8_t need_pac_left;
-const uint8_t MAX_MERGE = 4;
+const uint8_t MAX_MERGE = 2;
 byte buffer_merge[MAX_MERGE][MAXPACKET][MAXPACKETLENGTH];
 
 // MERGE BYTE TEMPERARY
@@ -159,6 +159,7 @@ extern int max(int i,int j);
 extern void setFlag(void);
 
 extern void clear_packet();
+extern void merge_packet();
 
 // BYTE FUNCTION
 extern int subByte(byte* packet,byte* byteArr,int i,int j,int len);
@@ -247,13 +248,14 @@ void setup() {
 
   // CLEAN BUFFER
   while(raspi.available()) { raspi.read(); } 
+  raspi.setTimeout(50);
 
   Serial.println("Start loop");
 }
 
 void loop(){
   // RASPI RX
-  while(raspi.available()){
+  if(raspi.available()){
     n = raspi.readBytes(buffer,MAXBUFFER);
   
     header = byteToString(buffer,0,1);
@@ -285,7 +287,7 @@ void loop(){
   if(txFlag){
     txFlag = false;
     inTx = false;
-    if (stm32_state != NORMAL){
+    if (stm32_state != NORMAL && !packet.empty()){
       packet.push(std::move(packet.front()));
     }
     if (!packet.empty()){
@@ -482,7 +484,7 @@ void handle_command(String command){
 
     frameCount += 1;
     if(frameCount > maxFrame) frameCount = 0;
-    if (stm32_state == APOGEE && need_pac_left == 0) stm32_state == SUCCESS;
+    if (stm32_state == APOGEE && need_pac_left == 0) stm32_state = SUCCESS;
     if (need_pac_left == 0) merge_packet();
   }
   else{
@@ -499,7 +501,7 @@ void merge_packet(){
       byte_max = 0x00;
       count_max = 0;
       for(int k = 0;k < current_chunk;k++){
-        count[uint8(buffer_merge[k][i][j])]++;
+        count[uint8_t(buffer_merge[k][i][j])]++;
       }
       for(int k = 0;k < 256;k++){
         if(count[k] > count_max){

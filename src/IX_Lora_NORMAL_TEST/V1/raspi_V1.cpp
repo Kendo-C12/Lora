@@ -1,5 +1,5 @@
 
-#define MAXPACKETLENGTH 254
+#define MAXPACKETLENGTH 240
 #define MAXPACKET 12
 #define MAXBUFFER MAXPACKETLENGTH * MAXPACKET
 
@@ -207,7 +207,7 @@ void setup() {
     delay(2000); 
     enableRadio = 0;
   }
-  // radio.setDio1Action(setFlag);
+  radio.setDio1Action(setFlag);
   Serial.println("INIT BARO AND GNSS");
 
   if(ENABLE_SENSOR){
@@ -251,28 +251,25 @@ void setup() {
 
 void loop(){
   // RASPI RX
-  while(raspi.available()){
-    // digitalWrite(LED_BUILTIN,HIGH);
-    Serial.println("AVAILABLE: " + String(raspi.available()));
-    Serial.println("Start Receiving");
-    Serial.println("HAVE RECEIVE: " + String(byte_receiv));
+  if(raspi.available()){
+    Serial.println("RASPI TASK RX");
     n = raspi.readBytes(buffer,MAXBUFFER);
-    if(n > 3000) continue;
+    if(n > 3000) return;
     byte_receiv += n;
     Serial.println("Receiving success");
   
     header = byteToString(buffer,0,1);
     ender = byteToString(buffer,n-3,n-1);
 
-    Serial.println("HEADE FROM RASPI: " + header);
-    Serial.println("ENDER FROM RASPI: " + ender);
-    Serial.println("PACKET LENGTH: " + String(n));
+    Serial.print("PACKET LENGTH: ");
+    Serial.println(n);
     handle_command(header);
     // digitalWrite(LED_BUILTIN,LOW);
   }
 
   // RASPI TX
   if (millis() - interval.get_packet > last.get_packet){
+    Serial.println("RASPI TASK TX");
     last.get_packet = millis();
     if (stm32_state == NORMAL && packet.empty()){
       raspi.println("PACKET_PLEASE");
@@ -283,11 +280,12 @@ void loop(){
   }
 
   // FLAG
-  if(/*txFlag || */(inTx && millis() - tx_start > (ToA * 2) + 10)){
+  if(txFlag /* ||(inTx && millis() - tx_start > (ToA * 2) )*/){
     // if(inTx && millis() - tx_start > ToA * 2) Serial.println("FLAG BY MAXIMUM TOA");
+    Serial.println("FLAG TASK");
     txFlag = false;
     inTx = false;
-    if (stm32_state != NORMAL){
+    if (stm32_state != NORMAL && !packet.empty()){
       packet.push(packet.getFront());
       packet.pop();
     }
@@ -300,6 +298,7 @@ void loop(){
   // RADIO
   if(!inTx) {
     if(!packet.empty()){
+    Serial.println("RADIO TASK");
       inTx = true;
 
       top_packet = packet.getFront().first;
@@ -313,9 +312,12 @@ void loop(){
       ToA =  radio.getTimeOnAir(lenChunk)/ (1000.0);
       if (state == RADIOLIB_ERR_NONE) {
         Serial.println(F("[SX1262] Send packet!"));
-        Serial.println("[TOA]: " + String(radio.getTimeOnAir(lenChunk)/ (1000.0 * 1000.0)));
-        Serial.println("[PACKET LEFT]: " + String(packet_left));
-        Serial.println("PACKET LEFT FROM QUEUE: " + String(packet.size()));
+        Serial.print("[TOA]: ");
+        Serial.println(ToA);
+        Serial.print("[PACKET LEFT]: ");
+        Serial.println(packet_left);
+        Serial.print("PACKET LEFT FROM QUEUE: ");
+        Serial.println(packet.size());
         tx_start = millis();
       } else {
         Serial.print(F("failed, code "));
@@ -325,37 +327,48 @@ void loop(){
   }
 
   if (millis() - last.log > interval.log){
+    Serial.println("LOG TASK");
     last.log = millis();
     
     Serial.println();
     Serial.println("===============STATE===============");
-    Serial.println("STATE stm32: " + String(stm32_state));
+    Serial.print("STATE stm32: ");
+    Serial.println(stm32_state);
     Serial.println("=============PACKETLEFT============");
-    Serial.println("PACKET LEFT FROM QUEUE: " + String(packet.size()));
-    // Serial.println("PACKET LEFT FROM COUNTING: " + String(packet_left));
-    // Serial.println("NEED PACKET? : " + String(stm32_state == NORMAL && packet.empty()));
+    Serial.print("PACKET LEFT FROM QUEUE: ");
+    Serial.println(packet.size());
     Serial.println("===============RADIO===============");
-    Serial.println("IN TX: " + String(inTx));
+    Serial.print("IN TX: ");
+    Serial.println(inTx);
     Serial.println("==============BARO==============");
-    Serial.println("TEMPERATUE: " + String(temp.temperature));
-    Serial.println("PRESSURE: " + String(pressure.pressure));
-    Serial.println("HUMIDITY: " + String(humidity.relative_humidity));
-    Serial.println("ALT: " + String(altBaro));
+    Serial.print("TEMPERATUE: ");
+    Serial.println(temp.temperature);
+    Serial.print("PRESSURE: ");
+    Serial.println(pressure.pressure);
+    Serial.print("HUMIDITY: ");
+    Serial.println(humidity.relative_humidity);
+    Serial.print("ALT: ");
+    Serial.println(altBaro);
     Serial.println("===============GPS===============");
-    Serial.println("LAT: " + String(lat));
-    Serial.println("LON: " + String(lon));
-    Serial.println("ALT: " + String(alt));
-    Serial.println("SIV: " + String(SIV));
+    Serial.print("LAT: ");
+    Serial.println(lat);
+    Serial.print("LON: ");
+    Serial.println(lon);
+    Serial.print("ALT: ");
+    Serial.println(alt);
     Serial.println();
   }
   
   // INTERVAL
-  if(millis() - last.raspi_check > interval.raspi_check){
-    last.raspi_check = millis();
-    Serial.println("In queue: " + String(packet.size()));
-  }
+  // if(millis() - last.raspi_check > interval.raspi_check){
+  //   Serial.println("RASPI TASK RX");
+  //   last.raspi_check = millis();
+  //   Serial.print("In queue: ");
+  //   Serial.println(packet.size());
+  // }
 
   if(ENABLE_SENSOR){
+    Serial.println("SENSOR TASK");
     // BAROMETER
     if(millis() - last.baro > interval.baro){
       last.baro = millis();
@@ -409,6 +422,7 @@ void loop(){
     }
   }
   if(millis() - last_error_check > 100){
+    Serial.println("LED TASK");
     last_error_check = millis();
     digitalToggle(LED_BUILTIN);
   }
@@ -440,11 +454,12 @@ void handle_command(String command){
     lon = std::get<1>(gps);
     alt = std::get<2>(gps);
 
-    raspi.println("GPS,"
-        + String(lat) + ','
-        + String(lon) + ','
-        + String(alt));
-
+    raspi.print("GPS,");
+    raspi.print(lat);
+    raspi.print(',');
+    raspi.print(lon);
+    raspi.print(',');
+    raspi.println(alt);
 
   }
   else if(command == "IX" || command == "AP") // PICTURE
@@ -454,7 +469,8 @@ void handle_command(String command){
     ender = byteToString(buffer,n-3,n-1);
     n = subByte(buffer, buffer, 2, n-4, 0);
     buffer_length = n;
-    Serial.println("Get packet range raspi: " + String(n));
+    Serial.print("Get packet range raspi: ");
+    Serial.println(n);
     if (ender != "END"){
       Serial.println("DENEID PACKET: UNEXPECT ENDER " + ender);
       return;
@@ -483,7 +499,8 @@ void handle_command(String command){
             
 
       packet.push(std::make_pair(chunk[current_chunk],lenChunk));
-      Serial.println("PACKET LEFT TO SEPERATE: " + String(max(0,ceil(float(n)/maxPacket))));  
+      Serial.print("PACKET LEFT TO SEPERATE: ");
+      Serial.println(max(0,ceil(float(n)/maxPacket)));  
       // printByte(chunk,lenChunk);
       current_chunk++;
       if(current_chunk > MAXPACKET) current_chunk = 0;
@@ -495,10 +512,8 @@ void handle_command(String command){
     if (stm32_state == APOGEE) stm32_state = SUCCESS;
   }
   else{
-    Serial.println("DENEID PACKET: UNEXPECT HEADER " + command);
-    Serial.println((command.substring(0,2) == "GG"));
-    Serial.println((command[0] == 'G'));
-    Serial.println((command[1] == 'G'));
+    Serial.println("DENEID PACKET: UNEXPECT HEADER ");
+    Serial.println(command);
   }
 
 }
