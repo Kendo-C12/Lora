@@ -22,6 +22,9 @@
 
 // ENABLE MS8607 BAROMETER AND UBLOX GNSS V3
 #define ENABLE_SENSOR 1
+#define LORA_GPS 1
+
+constexpr uint32_t UBLOX_CUSTOM_MAX_WAIT = 250ul;
 
 // Lora
 SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  
@@ -78,6 +81,7 @@ String tem;
 byte* top_packet;
 FixedQueue<std::pair<byte*,int>>packet(MAXPACKET);
 int packet_left = 0;
+char apogee_packet[64];
 
 // STATE
 uint8_t stm32_state;
@@ -117,8 +121,6 @@ bool BaroNearApogee = false;
 // FILTER ALTITUDE
 float altFiltered = 0;
 float alpha = 0.08;
-float lastAltBaro = 0;
-float climbRate = 0;
 float highestBaro = 0;
 float highestGPS = 0;
 
@@ -129,6 +131,9 @@ sensors_event_t temp, pressure, humidity;
 
 uint32_t uart_errors = 0;
 uint32_t last_error_check = millis();
+
+// LORA GPS 
+byte* g;
 
 // VALUE
 /*
@@ -142,8 +147,6 @@ extern void handle_apogee();
 extern void apogee_check(void *);
 
 extern void handle_command(String command);
-
-extern std::tuple<float,float,float> get_gnss();
 
 // SHORT FUNCTION
 extern int min(int i,int j);
@@ -171,7 +174,7 @@ extern void printByte(byte* byteArr,int len);
 void setup() {
   Serial.begin(115200);
   raspi.begin(38400);
-  // raspi.setTimeout(50);
+  raspi.setTimeout(50);
   // while(!Serial);
   delay(4000);
 
@@ -220,12 +223,21 @@ void setup() {
         delay(1000);
       }
     }
+    else{
+      ms8607.setPressureResolution(MS8607_PRESSURE_RESOLUTION_OSR_4096);
+    }
     // MAX10S GNSS
     if (max10s.begin() == false) {
       while(1){
         Serial.println("Max-m10s failed to start");
         delay(1000);
       }
+    }
+    else{
+      max10s.setI2COutput(COM_TYPE_UBX, VAL_LAYER_RAM_BBR, UBLOX_CUSTOM_MAX_WAIT);
+      max10s.setNavigationFrequency(25, VAL_LAYER_RAM_BBR,UBLOX_CUSTOM_MAX_WAIT);
+      max10s.setAutoPVT(true, VAL_LAYER_RAM_BBR,UBLOX_CUSTOM_MAX_WAIT);
+      max10s.setDynamicModel(DYN_MODEL_AIRBORNE4g, VAL_LAYER_RAM_BBR,UBLOX_CUSTOM_MAX_WAIT);
     }
   }
 
@@ -248,13 +260,15 @@ void setup() {
   // NVIC_SetPriority(USART2_IRQn, 0);  // Highest priority for UART
   // NVIC_SetPriority(EXTI1_IRQn, 2);   // Lower priority for LoRa DIO1
 
+  *g = byte(0);
+
   Serial.println("Start loop");
 }
 
 void loop(){
   // RASPI RX
   if(raspi.available()){
-    Serial.println("RASPI TASK RX");
+    // Serial.println("RASPI TASK RX");
 
     n = raspi.readBytes(buffer,MAXBUFFER);
     if(n > 3000) return;
@@ -271,28 +285,26 @@ void loop(){
 
   // RASPI TX
   if (millis() - interval.get_packet > last.get_packet){
-    Serial.println("RASPI TASK TX");
+    // Serial.println("RASPI TASK TX");
     last.get_packet = millis();
     if (stm32_state == NORMAL && packet.empty()){
       raspi.println("PACK");
-      Serial.println("PACK");
     }
     if (stm32_state == APOGEE){
       raspi.println("APO");
-      Serial.println("APO");
     } 
   }
 
   // FLAG
   if(txFlag){
-    Serial.println("FLAG TASK");
+    // Serial.println("FLAG TASK");
     txFlag = false;
     inTx = false;
     if (stm32_state != NORMAL && !packet.empty()){
       packet.push(packet.getFront());
       packet.pop();
     }
-    if (!packet.empty()){
+    if (stm32_state == NORMAL && !packet.empty()){
       packet.pop();
     }
     Serial.println(F("[SX1262] Finish Send!"));
@@ -301,7 +313,7 @@ void loop(){
   // RADIO
   if(!inTx) {
     if(!packet.empty()){
-      Serial.println("RADIO TASK");
+      // Serial.println("RADIO TASK");
       inTx = true;
 
       top_packet = packet.getFront().first;
@@ -310,9 +322,14 @@ void loop(){
 
       if(lenChunk > 0) {
           packet_left = onebyteToInt(top_packet,lenChunk-1);
-          Serial.print("len chunk");
-          Serial.println(lenChunk);
-          state = radio.startTransmit(top_packet,lenChunk);
+
+          if(lenChunk == 0){ // GPS
+            lenChunk = snprintf(apogee_packet, sizeof(apogee_packet), "GPS,%.6f,%.6f,%.6f", lat, lon, altFiltered);
+            state = radio.startTransmit(apogee_packet,lenChunk);
+          }
+          else{
+            state = radio.startTransmit(top_packet,lenChunk);
+          }
 
           ToA =  radio.getTimeOnAir(lenChunk)/ (1000.0);
           if (state == RADIOLIB_ERR_NONE) {
@@ -337,7 +354,7 @@ void loop(){
   }
 
   if (millis() - last.log > interval.log){
-    Serial.println("LOG TASK");
+    // Serial.println("LOG TASK");
     last.log = millis();
     
     Serial.println();
@@ -358,8 +375,10 @@ void loop(){
       Serial.println(pressure.pressure);
       Serial.print("HUMIDITY: ");
       Serial.println(humidity.relative_humidity);
-      Serial.print("ALT: ");
+      Serial.print("ALT RAW: ");
       Serial.println(altBaro);
+      Serial.print("ALT FILTER: ");
+      Serial.println(altFiltered);
       Serial.println("===============GPS===============");
       Serial.print("LAT: ");
       Serial.println(lat);
@@ -372,7 +391,7 @@ void loop(){
   }
 
   if(ENABLE_SENSOR){
-    Serial.println("SENSOR TASK");
+    // Serial.println("SENSOR TASK");
     // BAROMETER
     if(millis() - last.baro > interval.baro){
       last.baro = millis();
@@ -381,9 +400,6 @@ void loop(){
       altBaro = 44300 * (1 - pow((pressure.pressure / 1013.25), 1.0 / 5.256));
 
       altFiltered = alpha * altBaro + (1 - alpha) * altFiltered;
-
-      climbRate = altFiltered - lastAltBaro;
-      lastAltBaro = altFiltered;
     }
 
     // GPS
@@ -416,15 +432,20 @@ void loop(){
         if (altFiltered > highestBaro) {
           highestBaro = altFiltered;
         }
-      }
-    
-      // WARNING
-      if (!BaroNearApogee && climbRate < 0.2 && climbRate > -0.2 && altBaro > 1000){
-          Serial.println("Near Apogee by Baro");
-          BaroNearApogee = true;
+        else if (highestBaro > altFiltered + 5) {
+          Serial.println("BaroApogee reached, begin falling");
+          BaroApogee = true;
+        }
       }
     }
+
+    // Waring
+    if (!BaroNearApogee && altBaro > 24000){
+      Serial.println("Near Apogee by Baro");
+      BaroNearApogee = true;
+    }
   }
+
   if(millis() - last_error_check > 100){
     // Serial.println("LED TASK");
     last_error_check = millis();
@@ -433,6 +454,10 @@ void loop(){
 }
 
 void handle_apogee(){
+    Serial.println("APOGEE");
+    radio.standby();
+    inTx = false;
+
     stm32_state = APOGEE;
 
     clear_packet();   
@@ -452,11 +477,6 @@ void handle_command(String command){
   if(command.substring(0,2) == "GG") // GET GPS
   {
     Serial.println("RECEIVEING GG");
-    gps = get_gnss();
-    
-    lat = std::get<0>(gps);
-    lon = std::get<1>(gps);
-    alt = std::get<2>(gps);
 
     raspi.print("GPS,");
     raspi.print(lat, 6);
@@ -470,6 +490,8 @@ void handle_command(String command){
   {
     // if(byte_receiv < 6) return
     if (stm32_state == NORMAL && !packet.empty()) return;
+    if (stm32_state == APOGEE && command != "AP") return;
+
     header = byteToString(buffer,0,1);
     ender = byteToString(buffer,n-3,n-1);
     n = subByte(buffer, buffer, 2, n-4, 0);
@@ -520,25 +542,23 @@ void handle_command(String command){
       current_chunk++;
       if(current_chunk >= MAXPACKET) current_chunk = 0;
     }
+    if(LORA_GPS){
+      packet.push(std::make_pair(g,1));
+      current_chunk++;
+      if(current_chunk >= MAXPACKET) current_chunk = 0;
+    }
 
     frameCount += 1;
     if(frameCount > maxFrame) frameCount = 0;
 
-    if (stm32_state == APOGEE) stm32_state = SUCCESS;
+    if (stm32_state == APOGEE){
+       stm32_state = SUCCESS;
+    }
+    Serial.println(stm32_state);
   }
   else{
     Serial.println("DENEID PACKET: UNEXPECT HEADER ");
     Serial.println(command);
-  }
-
-}
-
-std::tuple<float,float,float> get_gnss(){
-  if (ENABLE_SENSOR){
-    return std::make_tuple(lat,lon,altBaro);
-  }
-  else{
-    return std::make_tuple(1.0,1.0,1.0);
   }
 }
 

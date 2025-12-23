@@ -136,40 +136,9 @@ sensors_event_t temp, pressure, humidity;
   SUCCESS : FINISH GE IMAGE FROM RASPI
 */
 
-extern void handle_apogee();
-
-extern void apogee_check(void *);
-
-extern void handle_command(String command);
-
-extern std::tuple<float,float,float> get_gnss();
-
-// SHORT FUNCTION
-extern int min(int i,int j);
-
-extern int max(int i,int j);
-
-extern void setFlag(void);
-
-extern void clear_packet();
-
-// BYTE FUNCTION
-extern int subByte(byte* packet,byte* byteArr,int i,int j,int len);
-
-extern String byteToString(byte* byteArr,int i,int j);
-
-extern int onebyteToInt(byte* byteArr,int i);
-
-extern int stringToByte(String s,byte* byteArr,int len);
-
-extern int intToOneByte(int i,byte* byteArr,int len);
-
-extern void printByte(byte* byteArr,int len);
-
 // SETUP
 void setup() {
   Serial.begin(115200);
-  raspi.begin(115200);
   // while(!Serial);
   delay(4000);
 
@@ -178,36 +147,9 @@ void setup() {
   Serial.println(F("[SX1262] Initializing ... "));
 
   // SPI
-  spi1.begin();
   Wire.begin();
 
   Wire.setTimeout(10);
-
-  // RADIO
-  state = radio.begin(
-    center_freq,
-    bandwidth,
-    spreading_factor,
-    coding_rate,
-    sync_word,
-    power,
-    preamble_length
-  );
-  state = min(state,radio.explicitHeader());
-  state = min(state,radio.setCRC(true));
-  state = min(state,radio.forceLDRO(true));
-
-  if (state == RADIOLIB_ERR_NONE) {
-    Serial.println(F("success!"));
-    enableRadio = 1;
-  } else {
-    Serial.print(F("failed, code ")); 
-    Serial.println(state);
-    delay(2000); 
-    enableRadio = 0;
-  }
-  radio.setDio1Action(setFlag);
-  Serial.println("INIT BARO AND GNSS");
 
   // // MS8607 BAROMETER
   if (ms8607.begin() == false) {
@@ -229,16 +171,6 @@ void setup() {
   // STATE
   stm32_state = NORMAL;
 
-  // IMAGE
-  frameCount = 0;
-
-  // RADIO
-  inTx = false;
-
-  // LED CHECKING
-  pinMode(LED_BUILTIN,OUTPUT);
-  digitalWrite(LED_BUILTIN,HIGH);
-
   // CLEAN BUFFER
   while(raspi.available()) { raspi.read(); } 
 
@@ -246,67 +178,6 @@ void setup() {
 }
 
 void loop(){
-  // RASPI RX
-  while(raspi.available()){
-    n = raspi.readBytes(buffer,MAXBUFFER);
-  
-    header = byteToString(buffer,0,1);
-    ender = byteToString(buffer,n-3,n-1);
-
-    Serial.println("HEADE FROM RASPI: " + header);
-    Serial.println("ENDER FROM RASPI: " + ender);
-    Serial.println("PACKET LENGTH: " + String(n));
-    handle_command(header);
-  }
-
-  // RASPI TX
-  if (millis() - interval.get_packet > last.get_packet){
-    last.get_packet = millis();
-    if (stm32_state == NORMAL && packet.empty()){
-      raspi.println("PACKET_PLEASE");
-    }
-    if (stm32_state == APOGEE){
-      raspi.println("CMD_APOGEE");
-    } 
-  }
-
-  // FLAG
-  if(txFlag){
-    txFlag = false;
-    inTx = false;
-    if (stm32_state != NORMAL){
-      packet.push(std::move(packet.front()));
-    }
-    if (!packet.empty()){
-      packet.pop();
-    }
-    Serial.println(F("[SX1262] Finish Send!"));
-  }
-  
-  // RADIO
-  if(!inTx) {
-    if(!packet.empty()){
-      inTx = true;
-
-      top_packet = packet.front().first;
-      lenChunk = packet.front().second;
-      // top_packet = "Hello,world";
-
-      packet_left = onebyteToInt(top_packet,lenChunk-1);
-      
-      state = radio.startTransmit(top_packet,lenChunk);
-
-      if (state == RADIOLIB_ERR_NONE) {
-        Serial.println(F("[SX1262] Send packet!"));
-        Serial.println("[TOA]: " + String(radio.getTimeOnAir(lenChunk)/ (1000.0 * 1000.0)));
-        Serial.println("[PACKET LEFT]: " + String(packet_left));
-      } else {
-        Serial.print(F("failed, code "));
-        Serial.println(state);
-      }
-    }
-  }
-
   if (millis() - last.log > interval.log){
     if(packet.empty()){
       digitalWrite(LED_BUILTIN,HIGH);
@@ -338,12 +209,6 @@ void loop(){
     Serial.println("SIV: " + String(SIV));
 
     Serial.println();
-  }
-  
-  // INTERVAL
-  if(millis() - last.raspi_check > interval.raspi_check){
-    last.raspi_check = millis();
-    Serial.println("In queue: " + String(packet.size()));
   }
 
   if(ENABLE_SENSOR){
@@ -415,158 +280,4 @@ void loop(){
       handle_apogee();
     }
   }
-}
-
-void handle_apogee(){
-    stm32_state = APOGEE;
-    clear_packet();
-}
-
-void apogee_check(void *){
-    // SHOGUN.EXE
-    // while(1){
-    //   if(APOGEENOW){
-    //     handle_apogee();
-    //     break;
-    //   }
-    // }
-}
-
-void handle_command(String command){
-  if(command.substring(0,2) == "GG") // GET GPS
-  {
-    Serial.println("RECEIVEING GG");
-    gps = get_gnss();
-    
-    lat = std::get<0>(gps);
-    lon = std::get<1>(gps);
-    alt = std::get<2>(gps);
-
-    raspi.println("GPS,"
-        + String(lat) + ','
-        + String(lon) + ','
-        + String(alt));
-
-
-  }
-  else if(command == "IX" || command == "AP") // PICTURE
-  {
-    if (stm32_state == NORMAL && !packet.empty()) return;
-    header = byteToString(buffer,0,1);
-    ender = byteToString(buffer,n-3,n-1);
-    n = subByte(buffer, buffer, 2, n-4, 0);
-    buffer_length = n;
-    Serial.println("Get packet range raspi: " + String(n));
-    if (ender != "END"){
-      Serial.println("DENEID PACKET: UNEXPECT ENDER " + ender);
-      return;
-    }
-    
-    i = 0;
-    
-    clear_packet();
-
-    while(n > 0){
-      n -= maxPacket;
-      
-      lenChunk = 0;
-      // HEADER
-      lenChunk = stringToByte((header + ","),chunk[current_chunk],lenChunk); 
-      // FRAMECOUNT
-      lenChunk = intToOneByte(frameCount,chunk[current_chunk],lenChunk);
-      // PACKET
-      lenChunk = subByte(buffer,chunk[current_chunk],i, min(i + maxPacket - 1, buffer_length-1),lenChunk);
-      // ENDER
-      lenChunk = stringToByte(",",chunk[current_chunk],lenChunk); 
-      // PACKET LEFT
-      lenChunk = intToOneByte(max(0,ceil(float(n)/maxPacket)),chunk[current_chunk],lenChunk); 
-      
-      i += maxPacket;
-            
-
-      packet.push(std::make_pair(chunk[current_chunk],lenChunk));
-      Serial.println("PACKET LEFT TO SEPERATE: " + String(max(0,ceil(float(n)/maxPacket))));  
-      // printByte(chunk,lenChunk);
-      current_chunk++;
-      if(current_chunk > 250) current_chunk = 0;
-    }
-
-    frameCount += 1;
-    if(frameCount > maxFrame) frameCount = 0;
-
-    if (stm32_state == APOGEE) stm32_state == SUCCESS;
-  }
-  else{
-    Serial.println("DENEID PACKET: UNEXPECT HEADER " + command);
-    Serial.println((command.substring(0,2) == "GG"));
-    Serial.println((command[0] == 'G'));
-    Serial.println((command[1] == 'G'));
-  }
-
-}
-
-std::tuple<float,float,float> get_gnss(){
-  if (ENABLE_SENSOR){
-    return std::make_tuple(lat,lon,altBaro);
-  }
-  else{
-    return std::make_tuple(1.0,1.0,1.0);
-  }
-}
-
-int min(int i,int j){
-  if(i < j) return i;
-  return j;
-}
-
-int max(int i,int j){
-  if(i > j) return i;
-  return j;
-}
-
-void setFlag(void){
-  txFlag = true;
-}
-
-void clear_packet(){
-  while (!packet.empty()) packet.pop();
-}
-
-int subByte(byte* byteArr,byte* packet,int i,int j,int len){
-  for(int k = i;k <= j;k++){
-    packet[len] = byteArr[k];
-    len++;
-  }
-  return len;
-}
-
-String byteToString(byte* byteArr,int i,int j){
-  String s = "";
-  for(int k = i;k <= j;k++){
-    s += char(byteArr[k]);
-  }
-  return s;
-}
-
-int onebyteToInt(byte* byteArr,int i){
-  return int(byteArr[i] - char(0));
-}
-
-int stringToByte(String s,byte* byteArr,int len){
-  for(int k = 0;k < s.length();k++,len++){
-    byteArr[len] = byte(s[k]);
-  }
-  return len;
-}
-
-int intToOneByte(int i,byte* byteArr,int len){
-  byteArr[len] = byte(i);
-  len++;
-  return len;
-}
-
-void printByte(byte* byteArr,int len){
-  String s = "";
-  s = byteToString(byteArr,0,len);
-  Serial.println(s);
 }
