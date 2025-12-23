@@ -1,7 +1,7 @@
 
-#define MAXPACKETLENGTH 256
-#define MAXPACKET 64
-#define MAXBUFFER MAXPACKETLENGTH * MAXPACKET
+// #define MAXPACKETLENGTH 256
+// #define MAXPACKET 64
+// #define MAXBUFFER MAXPACKETLENGTH * MAXPACKET
 
 #include <Arduino.h>
 
@@ -89,6 +89,7 @@ void loop() {
     for(int i  = 0;i < n;i++){
       Serial.print(char(byteArr[i]));
     }
+    if(byteArr[0] == byte('G')) raspi.println("GPS,1,1,1");
   }
 
 
@@ -115,10 +116,5 @@ void loop() {
         }
       }
     }
-
-    // lat = max10s.getLatitude();
-    // lon = max10s.getLongitude();
-    // alt = max10s.getAltitude();
-    // SIV = max10s.getSIV();
   }
 }

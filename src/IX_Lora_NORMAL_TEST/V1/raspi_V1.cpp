@@ -1,6 +1,6 @@
 
-#define MAXPACKETLENGTH 256
-#define MAXPACKET 64
+#define MAXPACKETLENGTH 254
+#define MAXPACKET 20
 #define MAXBUFFER MAXPACKETLENGTH * MAXPACKET
 
 
@@ -24,7 +24,7 @@
 #include <SparkFun_u-blox_GNSS_v3.h>
 
 // ENABLE MS8607 BAROMETER AND UBLOX GNSS V3
-#define ENABLE_SENSOR 1
+#define ENABLE_SENSOR 0
 
 // Lora
 SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  
@@ -39,9 +39,14 @@ Adafruit_MS8607 ms8607;
 // GNSS
 SFE_UBLOX_GNSS max10s;
 
+// SIZE OF BYTE RECEIVE
+uint32_t byte_receiv = 0;
+
 // RADIO
 bool inTx;
 bool enableRadio = false;
+uint32_t ToA;
+uint32_t tx_start;
 
 // flag
 volatile bool txFlag = false;
@@ -124,6 +129,8 @@ float altBaro;
 float altGPS;
 sensors_event_t temp, pressure, humidity;    
 
+uint32_t uart_errors = 0;
+uint32_t last_error_check = 0;
 
 // VALUE
 /*
@@ -166,6 +173,7 @@ extern void printByte(byte* byteArr,int len);
 void setup() {
   Serial.begin(115200);
   raspi.begin(115200);
+  raspi.setTimeout(50);
   // while(!Serial);
   delay(4000);
 
@@ -202,24 +210,24 @@ void setup() {
     delay(2000); 
     enableRadio = 0;
   }
-  radio.setDio1Action(setFlag);
+  // radio.setDio1Action(setFlag);
   Serial.println("INIT BARO AND GNSS");
 
-  // // MS8607 BAROMETER
-  if (ms8607.begin() == false) {
-    Serial.println("MS8607 failed to start");
-    delay(1000);
-  }
-  else{
-    Serial.println("MS8607 success to start");
-  }
-  // MAX10S GNSS
-  if (max10s.begin() == false) {
-    Serial.println("Max-m10s failed to start");
-    delay(1000);
-  }
-  else{
-    Serial.println("Max-m10s success to start");
+  if(ENABLE_SENSOR){
+    // // MS8607 BAROMETER
+    if (ms8607.begin() == false) {    
+      while(1){
+        Serial.println("MS8607 failed to start");
+        delay(1000);
+      }
+    }
+    // MAX10S GNSS
+    if (max10s.begin() == false) {
+      while(1){
+        Serial.println("Max-m10s failed to start");
+        delay(1000);
+      }
+    }
   }
 
   // STATE
@@ -238,13 +246,23 @@ void setup() {
   // CLEAN BUFFER
   while(raspi.available()) { raspi.read(); } 
 
+  // NVIC_SetPriority(USART2_IRQn, 0);  // Highest priority for UART
+  // NVIC_SetPriority(EXTI1_IRQn, 2);   // Lower priority for LoRa DIO1
+
   Serial.println("Start loop");
 }
 
 void loop(){
   // RASPI RX
   while(raspi.available()){
+    digitalWrite(LED_BUILTIN,HIGH);
+    Serial.println("AVAILABLE: " + String(raspi.available()));
+    Serial.println("Start Receiving");
+    Serial.println("HAVE RECEIVE: " + String(byte_receiv));
     n = raspi.readBytes(buffer,MAXBUFFER);
+    if(n > 3000) continue;
+    byte_receiv += n;
+    Serial.println("Receiving success");
   
     header = byteToString(buffer,0,1);
     ender = byteToString(buffer,n-3,n-1);
@@ -253,6 +271,7 @@ void loop(){
     Serial.println("ENDER FROM RASPI: " + ender);
     Serial.println("PACKET LENGTH: " + String(n));
     handle_command(header);
+    digitalWrite(LED_BUILTIN,LOW);
   }
 
   // RASPI TX
@@ -267,7 +286,8 @@ void loop(){
   }
 
   // FLAG
-  if(txFlag){
+  if(/*txFlag || */(inTx && millis() - tx_start > (ToA * 2) + 10)){
+    // if(inTx && millis() - tx_start > ToA * 2) Serial.println("FLAG BY MAXIMUM TOA");
     txFlag = false;
     inTx = false;
     if (stm32_state != NORMAL){
@@ -292,10 +312,12 @@ void loop(){
       
       state = radio.startTransmit(top_packet,lenChunk);
 
+      ToA =  radio.getTimeOnAir(lenChunk)/ (1000.0);
       if (state == RADIOLIB_ERR_NONE) {
         Serial.println(F("[SX1262] Send packet!"));
         Serial.println("[TOA]: " + String(radio.getTimeOnAir(lenChunk)/ (1000.0 * 1000.0)));
         Serial.println("[PACKET LEFT]: " + String(packet_left));
+        tx_start = millis();
       } else {
         Serial.print(F("failed, code "));
         Serial.println(state);
@@ -304,12 +326,6 @@ void loop(){
   }
 
   if (millis() - last.log > interval.log){
-    if(packet.empty()){
-      digitalWrite(LED_BUILTIN,HIGH);
-    }
-    else{
-      digitalWrite(LED_BUILTIN,LOW);
-    }
     
     last.log = millis();
     
@@ -332,7 +348,6 @@ void loop(){
     Serial.println("LON: " + String(lon));
     Serial.println("ALT: " + String(alt));
     Serial.println("SIV: " + String(SIV));
-
     Serial.println();
   }
   
@@ -393,6 +408,35 @@ void loop(){
           Serial.println("Near Apogee by Baro");
           BaroNearApogee = true;
       }
+    }
+  }
+  if(millis() - last_error_check > 100){
+    last_error_check = millis();
+    
+    // Read UART status register (STM32F1/F2/F4 compatible)
+    uint32_t sr = USART2->SR;
+    
+    if(sr & USART_SR_ORE){  // Overrun error
+      uart_errors++;
+      Serial.println("UART OVERRUN ERROR! Count: " + String(uart_errors));
+      // Clear by reading SR then DR
+      volatile uint32_t temp = USART2->SR;
+      temp = USART2->DR;
+      (void)temp; // Suppress unused warning
+    }
+    
+    if(sr & USART_SR_FE){  // Framing error
+      Serial.println("UART FRAMING ERROR!");
+      volatile uint32_t temp = USART2->SR;
+      temp = USART2->DR;
+      (void)temp;
+    }
+    
+    if(sr & USART_SR_NE){  // Noise error
+      Serial.println("UART NOISE ERROR!");
+      volatile uint32_t temp = USART2->SR;
+      temp = USART2->DR;
+      (void)temp;
     }
   }
 }
@@ -475,7 +519,7 @@ void handle_command(String command){
     frameCount += 1;
     if(frameCount > maxFrame) frameCount = 0;
 
-    if (stm32_state == APOGEE) stm32_state == SUCCESS;
+    if (stm32_state == APOGEE) stm32_state = SUCCESS;
   }
   else{
     Serial.println("DENEID PACKET: UNEXPECT HEADER " + command);

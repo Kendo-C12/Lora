@@ -1,4 +1,5 @@
-#define MAXPACKETLENGTH 255
+
+#define MAXPACKETLENGTH 256
 #define MAXPACKET 64
 #define MAXBUFFER MAXPACKETLENGTH * MAXPACKET
 
@@ -23,7 +24,7 @@
 #include <SparkFun_u-blox_GNSS_v3.h>
 
 // ENABLE MS8607 BAROMETER AND UBLOX GNSS V3
-#define ENABLE_SENSOR 1
+#define ENABLE_SENSOR 0
 
 // Lora
 SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);  
@@ -31,6 +32,9 @@ SPIClass spi1(LORA_MOSI,LORA_MISO,LORA_SCLK);
 SPISettings lora_spi_settings(8000000, MSBFIRST, SPI_MODE0);
 
 SX1262 radio = new Module(LORA_NSS, LORA_DIO1, LORA_NRST, LORA_BUSY, spi1, lora_spi_settings);
+
+// I2C
+TwoWire i2c1()
 
 // BAROMETER
 Adafruit_MS8607 ms8607;
@@ -68,24 +72,12 @@ String header,ender;
 // CHUNK TEMPERARY
 byte chunk[MAXPACKET][MAXPACKETLENGTH];
 int current_chunk = 0;
-int start_pack;
-int end_pack;
 int lenChunk = 0;
 
 // PACKET
 byte* top_packet;
 std::queue<std::pair<byte*,int>>packet;
-int packet_left = 0;
-
-// MERGE PACKET
-uint8_t need_pac_left;
-const uint8_t MAX_MERGE = 4;
-byte buffer_merge[MAX_MERGE][MAXPACKET][MAXPACKETLENGTH];
-
-// MERGE BYTE TEMPERARY
-byte byte_max;
-byte count_max;
-uint8_t count[256 + 4];
+int packet_left = 255;
 
 // STATE
 uint8_t stm32_state;
@@ -135,6 +127,8 @@ float altBaro;
 float altGPS;
 sensors_event_t temp, pressure, humidity;    
 
+// APOGEE
+uint32_t time_apogee;
 
 // VALUE
 /*
@@ -188,7 +182,7 @@ void setup() {
   spi1.begin();
   Wire.begin();
 
-  // Wire.setTimeout(10);
+  Wire.setTimeout(10);
 
   // RADIO
   state = radio.begin(
@@ -232,6 +226,7 @@ void setup() {
       }
     }
   }
+
   // STATE
   stm32_state = NORMAL;
 
@@ -247,6 +242,8 @@ void setup() {
 
   // CLEAN BUFFER
   while(raspi.available()) { raspi.read(); } 
+
+  time_apogee = millis() + 10000;
 
   Serial.println("Start loop");
 }
@@ -268,14 +265,9 @@ void loop(){
   // RASPI TX
   if (millis() - interval.get_packet > last.get_packet){
     last.get_packet = millis();
-    if (need_pac_left > 0){
-      raspi.println("PAC");
-    }
-    else if (stm32_state == NORMAL && packet.empty()){
+    if (stm32_state == NORMAL && packet.empty()){
       raspi.println("PACKET_PLEASE");
-      need_pac_left = MAX_MERGE;
     }
-
     if (stm32_state == APOGEE){
       raspi.println("CMD_APOGEE");
     } 
@@ -292,10 +284,6 @@ void loop(){
       packet.pop();
     }
     Serial.println(F("[SX1262] Finish Send!"));
-    
-    if (packet.empty()){
-      need_pac_left = 0;
-    }
   }
   
   // RADIO
@@ -322,7 +310,6 @@ void loop(){
     }
   }
 
-  // LOG
   if (millis() - last.log > interval.log){
     if(packet.empty()){
       digitalWrite(LED_BUILTIN,HIGH);
@@ -360,6 +347,10 @@ void loop(){
   if(millis() - last.raspi_check > interval.raspi_check){
     last.raspi_check = millis();
     Serial.println("In queue: " + String(packet.size()));
+  }
+
+  if(time_apogee > millis()){
+    handle_apogee();
   }
 
   if(ENABLE_SENSOR){
@@ -412,6 +403,7 @@ void loop(){
       if (!BaroNearApogee && climbRate < 0.2 && climbRate > -0.2 && altBaro > 1000){
           Serial.println("Near Apogee by Baro");
           BaroNearApogee = true;
+          handle_apogee();
       }
     }
   }
@@ -441,7 +433,7 @@ void handle_command(String command){
   }
   else if(command == "IX" || command == "AP") // PICTURE
   {
-    if ((stm32_state != SUCCESS && need_pac_left == 0)|| stm32_state == SUCCESS) return;
+    if (stm32_state == NORMAL && !packet.empty()) return;
     header = byteToString(buffer,0,1);
     ender = byteToString(buffer,n-3,n-1);
     n = subByte(buffer, buffer, 2, n-4, 0);
@@ -455,66 +447,44 @@ void handle_command(String command){
     i = 0;
     
     clear_packet();
-    need_pac_left -= 1;
-    current_chunk = 0;
+
     while(n > 0){
       n -= maxPacket;
       
       lenChunk = 0;
       // HEADER
-      lenChunk = stringToByte((header + ","),buffer_merge[need_pac_left][current_chunk],lenChunk); 
+      lenChunk = stringToByte((header + ","),chunk[current_chunk],lenChunk); 
       // FRAMECOUNT
-      lenChunk = intToOneByte(frameCount,buffer_merge[need_pac_left][current_chunk],lenChunk);
+      lenChunk = intToOneByte(frameCount,chunk[current_chunk],lenChunk);
       // PACKET
-      lenChunk = subByte(buffer,buffer_merge[need_pac_left][current_chunk],i, min(i + maxPacket - 1, buffer_length-1),lenChunk);
+      lenChunk = subByte(buffer,chunk[current_chunk],i, min(i + maxPacket - 1, buffer_length-1),lenChunk);
       // ENDER
-      lenChunk = stringToByte(",",buffer_merge[need_pac_left][current_chunk],lenChunk); 
+      lenChunk = stringToByte(",",chunk[current_chunk],lenChunk); 
       // PACKET LEFT
-      lenChunk = intToOneByte(max(0,ceil(float(n)/maxPacket)),buffer_merge[need_pac_left][current_chunk],lenChunk); 
+      lenChunk = intToOneByte(max(0,ceil(float(n)/maxPacket)),chunk[current_chunk],lenChunk); 
       
       i += maxPacket;
             
+
+      packet.push(std::make_pair(chunk[current_chunk],lenChunk));
       Serial.println("PACKET LEFT TO SEPERATE: " + String(max(0,ceil(float(n)/maxPacket))));  
-      // printByte(chunk,lenChunk); 
+      // printByte(chunk,lenChunk);
       current_chunk++;
       if(current_chunk > MAXPACKET) current_chunk = 0;
     }
 
     frameCount += 1;
     if(frameCount > maxFrame) frameCount = 0;
-    if (stm32_state == APOGEE && need_pac_left == 0) stm32_state == SUCCESS;
-    if (need_pac_left == 0) merge_packet();
+
+    if (stm32_state == APOGEE) stm32_state == SUCCESS;
   }
   else{
     Serial.println("DENEID PACKET: UNEXPECT HEADER " + command);
-    // Serial.println((command.substring(0,2) == "GG"));
-    // Serial.println((command[0] == 'G'));
-    // Serial.println((command[1] == 'G'));
-  }
-}
-
-void merge_packet(){
-  for(int i = 0;i < MAXPACKET;i++){
-    for(int j = 0;j < MAXPACKETLENGTH;j++){
-      byte_max = 0x00;
-      count_max = 0;
-      for(int k = 0;k < current_chunk;k++){
-        count[uint8(buffer_merge[k][i][j])]++;
-      }
-      for(int k = 0;k < 256;k++){
-        if(count[k] > count_max){
-          count_max = count[k];
-          byte_max = byte(k);
-        }
-        count[k] = 0;
-      }
-      chunk[i][j] = byte_max;
-    }
+    Serial.println((command.substring(0,2) == "GG"));
+    Serial.println((command[0] == 'G'));
+    Serial.println((command[1] == 'G'));
   }
 
-  for(int i = 0;i < MAXPACKET;i++){
-    packet.push(std::make_pair(chunk[i],lenChunk));  
-  }
 }
 
 std::tuple<float,float,float> get_gnss(){
