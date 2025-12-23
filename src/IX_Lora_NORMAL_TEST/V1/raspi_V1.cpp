@@ -23,6 +23,7 @@
 // ENABLE MS8607 BAROMETER AND UBLOX GNSS V3
 #define ENABLE_SENSOR 1
 #define LORA_GPS 1
+#define USE_GROUND_PRESSURE 0
 
 constexpr uint32_t UBLOX_CUSTOM_MAX_WAIT = 250ul;
 
@@ -35,6 +36,8 @@ SX1262 radio = new Module(LORA_NSS, LORA_DIO1, LORA_NRST, LORA_BUSY, spi1, lora_
 
 // BAROMETER
 Adafruit_MS8607 ms8607;
+uint8_t sample_num = 20;
+float ground_pressure =  1013.25;
 
 // GNSS
 SFE_UBLOX_GNSS max10s;
@@ -224,7 +227,22 @@ void setup() {
       }
     }
     else{
+      /*
+      OSR Setting   Pressure Resolution (mbar/hPa)      Altitude Resolution (cm)    Measurement TimeOSR 
+      OSR 256	      0.11 mbar   (hPa)                   ~90 cm	                    0.5 ms
+      OSR 1024	    0.04 mbar	  (hPa)                   ~30 cm	                    2.1 ms
+      OSR 4096	    0.016 mbar	(hPa)                   ~13 cm	                    8.2 ms
+      */
       ms8607.setPressureResolution(MS8607_PRESSURE_RESOLUTION_OSR_4096);
+      if (USE_GROUND_PRESSURE){   
+        ground_pressure = 0;
+        for(int i = 0;i < sample_num;i++){
+          ms8607.getEvent(&pressure, &temp, &humidity);
+          ground_pressure += pressure.pressure;
+          delay(20);
+        }
+        ground_pressure /= sample_num;
+      }
     }
     // MAX10S GNSS
     if (max10s.begin() == false) {
@@ -240,7 +258,6 @@ void setup() {
       max10s.setDynamicModel(DYN_MODEL_AIRBORNE4g, VAL_LAYER_RAM_BBR,UBLOX_CUSTOM_MAX_WAIT);
     }
   }
-
   // STATE
   stm32_state = NORMAL;
 
@@ -397,7 +414,7 @@ void loop(){
       last.baro = millis();
 
       ms8607.getEvent(&pressure, &temp, &humidity);
-      altBaro = 44300 * (1 - pow((pressure.pressure / 1013.25), 1.0 / 5.256));
+      altBaro = 44300 * (1 - pow((pressure.pressure / ground_pressure), 1.0 / 5.256));
 
       altFiltered = alpha * altBaro + (1 - alpha) * altFiltered;
     }
