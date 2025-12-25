@@ -12,7 +12,7 @@
 
 #include "fixed_queue.h"
 
-#include "pinoutSX1262.h"
+#include "pinoutSX1262_ballon.h"
 #include "config.h"
 #include "IX_state.h"
 
@@ -205,6 +205,18 @@ void setup() {
     power,
     preamble_length
   );
+    if (state == RADIOLIB_ERR_NONE) {
+    Serial.println(F("success!"));
+    enableRadio = 1;
+  } else {
+    Serial.print(F("failed, code ")); 
+    // while(1){
+      Serial.println(state);
+      delay(2000); 
+    // }
+    enableRadio = 0;
+  }
+
   state = min(state,radio.explicitHeader());
   state = min(state,radio.setCRC(true));
   state = min(state,radio.forceLDRO(true));
@@ -230,6 +242,7 @@ void setup() {
       }
     }
     else{
+      Serial.println("MS8607 SUCCESS");
       /*
       OSR Setting   Pressure Resolution (mbar/hPa)      Altitude Resolution (cm)    Measurement TimeOSR 
       OSR 256	      0.11 mbar   (hPa)                   ~90 cm	                    0.5 ms
@@ -255,6 +268,7 @@ void setup() {
       }
     }
     else{
+      Serial.println("MAX10 SUCCESS");
       max10s.setI2COutput(COM_TYPE_UBX, VAL_LAYER_RAM_BBR, UBLOX_CUSTOM_MAX_WAIT);
       max10s.setNavigationFrequency(25, VAL_LAYER_RAM_BBR,UBLOX_CUSTOM_MAX_WAIT);
       max10s.setAutoPVT(true, VAL_LAYER_RAM_BBR,UBLOX_CUSTOM_MAX_WAIT);
@@ -282,6 +296,7 @@ void setup() {
 
   *g = byte(0);
 
+  delay(1000);
   Serial.println("Start loop");
 }
 

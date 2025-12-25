@@ -33,6 +33,7 @@ int frameCount;
 byte packet[255];
 String ender;
 int packet_left;
+String gps_packet;
 
 int size_packet;
 
@@ -132,26 +133,29 @@ void loop()
     Serial.println("PACKET LENGTH: " + String(n));
     state = radio.readData(byteArr,n);
 
-    // state = min(state,radio.finishReceive());
-
     header = byteToString(0,1);
-    frameCount = onebyteToInt(3);
-    size_packet = subByte(packet, byteArr, 4, n-3);
-    ender = byteToString(n-2,n-2);
-    packet_left = onebyteToInt(n-1);
+    if(n > 2){
+      ender = byteToString(n-2,n-2);
+    }
 
     unexpect.header = false;
     unexpect.ender = false;
-    if (header != "IX" && header != "AP"){ 
+
+    if (header != "IX" && header != "AP" && header != "GS"){ 
       Serial.println("UNEXPECT HEADER: " + header); 
       unexpect.header = true; 
     }
-    if (ender != ","){ 
+    if (ender != "," && header != "GS"){ 
       Serial.println("UNEXPECT ENDER: " + String(ender)); 
       unexpect.ender = true;
     }
     
-    if (state == RADIOLIB_ERR_NONE && !unexpect.header && !unexpect.ender) {
+    if (state == RADIOLIB_ERR_NONE && (header == "IX" || header == "AP") && !unexpect.ender) {
+      frameCount = onebyteToInt(3);
+      size_packet = subByte(packet, byteArr, 4, n-3);
+      ender = byteToString(n-2,n-2);
+      packet_left = onebyteToInt(n-1);
+
       Serial.println("FC," + String(frameCount));  // FRAME COUNT
       Serial.println("PS," + String(size_packet));
       Serial.print(header + ",");                  // IX, AP,
@@ -159,7 +163,11 @@ void loop()
       Serial.write(packet,size_packet); Serial.println();
       Serial.println("PL," + String(packet_left)); // PACKET LEFT
       Serial.println("RS," + String(radio.getRSSI())); // RSSI
-    } else if(state != RADIOLIB_ERR_NONE)  {
+    } else if(state == RADIOLIB_ERR_NONE && header == "GS"){
+      gps_packet = byteToString(0,n-1);
+      Serial.println(gps_packet);
+    }
+    else if(state != RADIOLIB_ERR_NONE)  {
       Serial.print(F("failed, code "));
       Serial.println(state);
     }

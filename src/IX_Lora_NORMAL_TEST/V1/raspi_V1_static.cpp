@@ -17,9 +17,14 @@ float lastAltBaro = 0;
 float highestBaro = 0;
 float highestGPS = 0;
 
+float ground_pressure = 0;
+int sample_num = 20;
+
+sensors_event_t temp, pressure, humidity;
+
 constexpr uint32_t UBLOX_CUSTOM_MAX_WAIT = 250ul;
 
-TwoWire i2ci(PB9,PB8);
+TwoWire i2c1(PB9,PB8);
 
 long lastTime = 0;
 
@@ -27,13 +32,22 @@ void setup() {
   Serial.begin(9600);
   while(!Serial);
   Serial.println("Hello");
-  Wire.begin();
+  i2c1.begin();
 
-  if (ms8607.begin() == false) {
+  if (ms8607.begin(&Wire) == false) {
     while(1) Serial.println("MS8607 failed to start");
   }
 
-  if (max10s.begin() == false) {
+  ground_pressure = 0;
+  delay(20);
+  for(int i = 0;i < sample_num;i++){
+    ms8607.getEvent(&pressure, &temp, &humidity);
+    ground_pressure += pressure.pressure;
+    delay(20);
+  }
+  ground_pressure /= sample_num;
+
+  if (max10s.begin(Wire,0x42) == false) {
     while(1) Serial.println("Max-m10s failed to start");
   }
   else{
@@ -88,7 +102,7 @@ void loop() {
   sensors_event_t temp, pressure, humidity;
   ms8607.getEvent(&pressure, &temp, &humidity);
   Serial.print("Pressure: ");Serial.print(pressure.pressure); Serial.println(" hPa");
-  altBaro= 44300 * (1 - pow((pressure.pressure / 1013.25), 1.0 / 5.256)); 
+  altBaro= 44300 * (1 - pow((pressure.pressure / ground_pressure), 1.0 / 5.256)); 
 
   altFiltered = alpha * altBaro + (1 - alpha) * altFiltered;
 

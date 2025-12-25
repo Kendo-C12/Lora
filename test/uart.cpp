@@ -95,26 +95,7 @@ void loop() {
 
   if(millis() - 5000 > lastRxTime && millis() > 5000){
     lastRxTime = millis();
-    raspi.println("PACKET_PLEASE");
+    // raspi.println("PACKET_PLEASE");
     Serial.println("PACKET_PLEASE");
-  }
-
-    // GPS
-  if(millis() - last.gps > interval.gps){
-    last.gps = millis();
-
-    if (max10s.getFixType()==3){
-      altGPS = max10s.getAltitudeMSL()/1000.0;
-
-      if (!GPSApogee){
-        if (altGPS> highestGPS) {
-          highestGPS = altGPS;
-        }
-        else if (highestGPS > altGPS + 5) {
-          Serial.println("GPSApogee reached, begin falling");
-          GPSApogee = true;
-        }
-      }
-    }
   }
 }
